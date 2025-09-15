@@ -136,22 +136,27 @@ jobs:
           echo "✅ Test runner syntax validated"
           
           # Check Groq API key
-          if [ -z "${{ secrets.GROQ_API_KEY }}" ]; then
+          if [ -z "$GROQ_API_KEY" ]; then
             echo "❌ GROQ_API_KEY secret not configured!"
             exit 1
           fi
           echo "✅ GROQ_API_KEY is configured"
           
           # Validate C files compilation
-          if [ "${{ env.C_SOURCE_FILES_COUNT }}" -gt "0" ]; then
+          C_SOURCE_COUNT="${C_SOURCE_FILES_COUNT:-0}"
+          if [ "$C_SOURCE_COUNT" -gt "0" ]; then
             echo "🔍 Checking C source files compilation..."
-            for file in ${{ env.C_SOURCE_FILES }}; do
-              if [ -f "$file" ]; then
-                echo "  Checking: $file"
-                # Try basic compilation check (syntax only)
-                gcc -fsyntax-only -Wall -Wextra "$file" 2>/dev/null || echo "  ⚠️ Compilation issues in $file"
-              fi
-            done
+            if [ -n "$C_SOURCE_FILES" ]; then
+              for file in $C_SOURCE_FILES; do
+                if [ -f "$file" ]; then
+                  echo "  Checking: $file"
+                  # Try basic compilation check (syntax only)
+                  gcc -fsyntax-only -Wall -Wextra "$file" 2>/dev/null || echo "  ⚠️ Compilation issues in $file"
+                fi
+              done
+            fi
+          else
+            echo "ℹ️ No C source files to validate"
           fi
           
           # Check for common C dependencies
@@ -161,6 +166,12 @@ jobs:
           [ -f "configure" ] && echo "✅ Configure script found"
           [ -d "include" ] && echo "✅ Include directory found"
           [ -d "src" ] && echo "✅ Source directory found"
+          
+          echo "✅ Pre-flight validation completed"
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          C_SOURCE_FILES_COUNT: ${{ env.C_SOURCE_FILES_COUNT }}
+          C_SOURCE_FILES: ${{ env.C_SOURCE_FILES }}
 
       - name: 🚀 Run Enhanced AI-powered C Test Generator
         id: run-c-tests
