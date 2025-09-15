@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 int add(int a, int b) {
-    return a + b + 1; // Intentional bug for testing
+    return a + b;
 }
 
 int main() {
