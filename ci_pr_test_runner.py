@@ -412,6 +412,7 @@ class CChangeAnalyzerAndTester:
             "#include <assert.h>",
             "#include <stdarg.h>",
             "#include <setjmp.h>",
+            "#include <limits.h>",
             "#include <cmocka.h>  // Unity test framework"
         ])
         
@@ -474,8 +475,10 @@ class CChangeAnalyzerAndTester:
 
 ### 3. TEST STRUCTURE (Use CMocka framework):
 ```c
-// Test function example
+// Test function example - always add (void)state; to suppress unused parameter warning
 static void test_function_name(void **state) {{
+    (void)state;  // Suppress unused parameter warning
+    
     // Setup
     
     // Test execution
@@ -539,14 +542,18 @@ Generate ONLY a complete C test file with:
 1. All necessary #include statements at the top
 2. Any required #define macros
 3. Static test functions for each function under test
-4. Main function with CMocka test suite setup
+4. Main function with CMocka test suite setup that includes ALL test functions
 5. Proper C formatting and syntax
+
+IMPORTANT: Every test function you define MUST be included in the CMUnitTest array in main(), otherwise it will cause "defined but not used" warnings.
 
 ## COMPILATION REQUIREMENTS:
 - Code must compile with: gcc -std=c99 -Wall -Wextra
 - All functions must be properly declared
 - All variables must be declared before use
 - Use proper C99 standard compliance
+- ALWAYS add (void)state; as first line in test functions to suppress unused parameter warnings
+- Include <limits.h> if using INT_MAX, INT_MIN, or other limit constants
 
 Generate the complete C test file now:"""
 
