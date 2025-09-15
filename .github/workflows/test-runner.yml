@@ -1,0 +1,526 @@
+name: Enhanced C Project Change Tester
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  GCC_VERSION: '11'
+  CMOCKA_VERSION: '1.1.5'
+
+jobs:
+  test-changed-c-code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+      checks: write
+    
+    steps:
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref }}
+
+      - name: 🐍 Set up Python for test automation
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 🔧 Install C development tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-${{ env.GCC_VERSION }} \
+            g++-${{ env.GCC_VERSION }} \
+            build-essential \
+            cmake \
+            pkg-config \
+            libcmocka-dev \
+            libcmocka0 \
+            valgrind \
+            gcov \
+            lcov \
+            gdb
+          
+          # Set default compiler versions
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${{ env.GCC_VERSION }} 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-${{ env.GCC_VERSION }} 100
+          
+          # Verify installations
+          echo "🔍 Verifying C development tools..."
+          gcc --version
+          cmake --version
+          pkg-config --version
+          
+          # Check CMocka installation
+          echo "🧪 Checking CMocka installation..."
+          pkg-config --modversion cmocka || echo "CMocka pkg-config not found, but library should be available"
+          find /usr -name "*cmocka*" -type f 2>/dev/null | head -5
+
+      - name: 🐍 Install Python dependencies for test generation
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          
+          # Install requirements from requirements.txt if it exists
+          if [ -f requirements.txt ]; then
+            echo "📄 Installing from requirements.txt..."
+            pip install -r requirements.txt
+          else
+            echo "⚠️ No requirements.txt found, installing minimal dependencies..."
+            pip install groq coverage autopep8
+          fi
+          
+          # Verify Python tools
+          echo "🔍 Verifying Python installation..."
+          python -c "import groq; print(f'Groq version: {groq.__version__}')"
+          python -c "import coverage; print('Coverage installed successfully')"
+
+      - name: 📝 Analyze changed C files
+        id: changed-files-analysis
+        run: |
+          echo "🔍 Analyzing changed C/C++ files..."
+          
+          # Get changed files between base and head
+          git_diff_output=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          
+          # Filter for C/C++ files
+          c_files=$(echo "$git_diff_output" | grep -E '\.(c|h|cpp|cc|cxx|hpp)$' | head -20 || true)
+          c_source_files=$(echo "$c_files" | grep -E '\.(c|cpp|cc|cxx)$' || true)
+          c_header_files=$(echo "$c_files" | grep -E '\.(h|hpp)$' || true)
+          
+          # Set environment variables
+          echo "CHANGED_FILES=$(echo $git_diff_output | tr '\n' ' ')" >> $GITHUB_ENV
+          echo "C_CHANGED_FILES=$(echo $c_files | tr '\n' ' ')" >> $GITHUB_ENV
+          echo "C_SOURCE_FILES=$(echo $c_source_files | tr '\n' ' ')" >> $GITHUB_ENV
+          echo "C_HEADER_FILES=$(echo $c_header_files | tr '\n' ' ')" >> $GITHUB_ENV
+          
+          # Log results
+          echo "📁 All changed files:"
+          echo "$git_diff_output" | sed 's/^/  - /'
+          
+          echo "🔧 C/C++ files changed:"
+          if [ -n "$c_files" ]; then
+            echo "$c_files" | sed 's/^/  - /'
+          else
+            echo "  No C/C++ files changed"
+          fi
+          
+          # Count files
+          total_files=$(echo "$git_diff_output" | wc -l)
+          c_file_count=$(echo "$c_files" | grep -v '^$' | wc -l || echo "0")
+          source_file_count=$(echo "$c_source_files" | grep -v '^$' | wc -l || echo "0")
+          
+          echo "TOTAL_CHANGED_FILES=$total_files" >> $GITHUB_ENV
+          echo "C_FILES_COUNT=$c_file_count" >> $GITHUB_ENV
+          echo "C_SOURCE_FILES_COUNT=$source_file_count" >> $GITHUB_ENV
+
+      - name: 🔍 Pre-flight C code validation
+        run: |
+          echo "🔍 Running pre-flight C code validation..."
+          
+          # Check if test runner script exists
+          if [ ! -f "ci_pr_test_runner.py" ]; then
+            echo "❌ ci_pr_test_runner.py not found!"
+            exit 1
+          fi
+          
+          # Validate Python syntax of the runner
+          python -m py_compile ci_pr_test_runner.py
+          echo "✅ Test runner syntax validated"
+          
+          # Check Groq API key
+          if [ -z "${{ secrets.GROQ_API_KEY }}" ]; then
+            echo "❌ GROQ_API_KEY secret not configured!"
+            exit 1
+          fi
+          echo "✅ GROQ_API_KEY is configured"
+          
+          # Validate C files compilation
+          if [ "${{ env.C_SOURCE_FILES_COUNT }}" -gt "0" ]; then
+            echo "🔍 Checking C source files compilation..."
+            for file in ${{ env.C_SOURCE_FILES }}; do
+              if [ -f "$file" ]; then
+                echo "  Checking: $file"
+                # Try basic compilation check (syntax only)
+                gcc -fsyntax-only -Wall -Wextra "$file" 2>/dev/null || echo "  ⚠️ Compilation issues in $file"
+              fi
+            done
+          fi
+          
+          # Check for common C dependencies
+          echo "🔍 Checking for common C project files..."
+          [ -f "Makefile" ] && echo "✅ Makefile found"
+          [ -f "CMakeLists.txt" ] && echo "✅ CMakeLists.txt found"
+          [ -f "configure" ] && echo "✅ Configure script found"
+          [ -d "include" ] && echo "✅ Include directory found"
+          [ -d "src" ] && echo "✅ Source directory found"
+
+      - name: 🚀 Run Enhanced AI-powered C Test Generator
+        id: run-c-tests
+        env:
+          CHANGED_FILES: ${{ env.CHANGED_FILES }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          C_FILES_COUNT: ${{ env.C_FILES_COUNT }}
+          C_SOURCE_FILES_COUNT: ${{ env.C_SOURCE_FILES_COUNT }}
+          CC: gcc
+          CXX: g++
+        run: |
+          echo "🚀 Starting Enhanced C Test Generation..."
+          echo "📊 Files to analyze: ${{ env.C_SOURCE_FILES_COUNT }} C source files, ${{ env.C_FILES_COUNT }} total C/C++ files"
+          
+          # Create necessary directories
+          mkdir -p reports tests_pr coverage
+          
+          # Set up additional include paths
+          export C_INCLUDE_PATH="$PWD:$PWD/include:$PWD/src:$C_INCLUDE_PATH"
+          export LIBRARY_PATH="$PWD:$PWD/lib:$LIBRARY_PATH"
+          export LD_LIBRARY_PATH="$PWD:$PWD/lib:$LD_LIBRARY_PATH"
+          
+          # Run the enhanced C test generator
+          timeout 25m python ci_pr_test_runner.py || {
+            exit_code=$?
+            echo "❌ C test runner exited with code: $exit_code"
+            
+            # Create a failure report if none exists
+            if [ ! -f "reports/c_test_automation_report_"*".json" ]; then
+              cat > "reports/c_failure_report.json" << EOF
+          {
+            "title": "🚀 C Project Test Automation Report",
+            "generated": "$(date '+%Y-%m-%d %H:%M:%S')",
+            "status": "FAILED",
+            "execution_time_seconds": 0,
+            "test_results": {
+              "status": "failure",
+              "output": "C test runner failed or timed out"
+            },
+            "changed_files": $(echo '${{ env.CHANGED_FILES }}' | jq -R 'split(" ")'),
+            "compilation_status": {},
+            "execution_logs": ["C test execution failed"]
+          }
+          EOF
+            fi
+            
+            if [ $exit_code -eq 124 ]; then
+              echo "⏰ C test generation timed out after 25 minutes"
+            fi
+            exit $exit_code
+          }
+
+      - name: 📊 Process C Test Results
+        if: always()
+        run: |
+          echo "📊 Processing C test results..."
+          
+          # Check if reports were generated
+          if [ -d "reports" ] && [ "$(ls -A reports)" ]; then
+            echo "✅ Reports found:"
+            ls -la reports/
+          else
+            echo "⚠️ No reports generated"
+          fi
+          
+          # Check if C test files were generated
+          if [ -d "tests_pr" ] && [ "$(ls -A tests_pr)" ]; then
+            echo "✅ Generated C test files found:"
+            ls -la tests_pr/
+            
+            # Show content of generated test file
+            if [ -f "tests_pr/pr_generated_tests.c" ]; then
+              echo "📄 Generated C test file preview:"
+              head -20 tests_pr/pr_generated_tests.c
+            fi
+          else
+            echo "⚠️ No C test files generated"
+          fi
+          
+          # Check for compiled test binaries
+          if [ -f "tests_pr/pr_generated_tests" ]; then
+            echo "✅ Compiled test binary found"
+            file tests_pr/pr_generated_tests
+          fi
+
+      - name: 🧹 Cleanup and Prepare C Artifacts
+        if: always()
+        run: |
+          echo "🧹 Preparing C project artifacts..."
+          
+          # Clean up compilation artifacts
+          find . -name "*.o" -delete 2>/dev/null || true
+          find . -name "*.so" -delete 2>/dev/null || true
+          find . -name "*.a" -delete 2>/dev/null || true
+          find . -name "core" -delete 2>/dev/null || true
+          
+          # Ensure directories exist for artifacts
+          mkdir -p reports tests_pr coverage
+          
+          # Create a summary file
+          cat > "reports/c_run_summary.txt" << EOF
+          C Test Automation Run Summary
+          ============================
+          Date: $(date)
+          GCC Version: $(gcc --version | head -1)
+          CMocka Available: $(pkg-config --exists cmocka && echo "Yes" || echo "No")
+          Total Changed Files: ${{ env.TOTAL_CHANGED_FILES }}
+          C Files Analyzed: ${{ env.C_FILES_COUNT }}
+          C Source Files: ${{ env.C_SOURCE_FILES_COUNT }}
+          Workflow Status: ${{ job.status }}
+          EOF
+          
+          # Save compiler and system info
+          echo "🔧 System and compiler information:" >> reports/c_run_summary.txt
+          echo "GCC: $(gcc --version | head -1)" >> reports/c_run_summary.txt
+          echo "CMake: $(cmake --version | head -1)" >> reports/c_run_summary.txt
+          echo "OS: $(uname -a)" >> reports/c_run_summary.txt
+
+      - name: 📊 Upload C Test Reports and Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c-test-automation-reports-${{ github.run_number }}
+          path: |
+            reports/
+            coverage/
+            tests_pr/
+            *.gcov
+          retention-days: 30
+          compression-level: 6
+
+      - name: 📝 Commit and Push C Reports to PR Branch
+        if: always()
+        run: |
+          echo "📝 Committing C reports to PR branch..."
+          
+          # Configure git
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "GitHub Actions Bot"
+          
+          # Create .gitignore entries if they don't exist
+          if [ ! -f .gitignore ]; then
+            touch .gitignore
+          fi
+          
+          # Ensure reports directories are not ignored
+          grep -q "^reports/" .gitignore && sed -i '/^reports\//d' .gitignore || true
+          grep -q "^coverage/" .gitignore && sed -i '/^coverage\//d' .gitignore || true
+          grep -q "^tests_pr/" .gitignore && sed -i '/^tests_pr\//d' .gitignore || true
+          
+          # Add reports to git
+          git add reports/ || true
+          git add coverage/ || true  
+          git add tests_pr/ || true
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "📭 No new C reports to commit"
+          else
+            echo "📤 Committing C reports..."
+            git commit -m "🤖 Add enhanced automated C test reports and coverage [skip ci]
+
+          - Generated by: Enhanced AI C Test Automation
+          - Run ID: ${{ github.run_id }}
+          - C files analyzed: ${{ env.C_FILES_COUNT }}
+          - Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            
+            # Push to the PR branch
+            git push origin HEAD:${{ github.head_ref }} || {
+              echo "⚠️ Failed to push C reports, but continuing..."
+            }
+          fi
+
+      - name: 📋 Generate and Post C PR Comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            console.log('📋 Generating C PR comment...');
+            
+            let reportData = null;
+            let reportExists = false;
+            
+            // Try to read the latest JSON report
+            try {
+              const reportsDir = 'reports';
+              if (fs.existsSync(reportsDir)) {
+                const files = fs.readdirSync(reportsDir);
+                const jsonFiles = files.filter(f => f.endsWith('.json') && !f.includes('failure'));
+                
+                if (jsonFiles.length > 0) {
+                  const latestReport = jsonFiles.sort().pop();
+                  const reportPath = path.join(reportsDir, latestReport);
+                  reportData = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+                  reportExists = true;
+                  console.log(`📄 Found C report: ${latestReport}`);
+                }
+              }
+            } catch (error) {
+              console.log('⚠️ Could not read C report file:', error.message);
+            }
+            
+            // Generate comment based on available data
+            let body;
+            
+            if (reportExists && reportData) {
+              const coveragePercent = reportData.coverage_metrics?.total_coverage || 'N/A';
+              const status = reportData.status;
+              const executionTime = parseFloat(reportData.execution_time_seconds).toFixed(1);
+              const modelName = reportData.model_name || 'AI Model';
+              const compilationStatus = reportData.compilation_status || {};
+              
+              const statusEmoji = status === 'SUCCESS' ? '✅' : status === 'FAILED' ? '❌' : '⚠️';
+              const coverageEmoji = coveragePercent !== 'N/A' && parseFloat(coveragePercent) >= 80 ? '🟢' : 
+                                   coveragePercent !== 'N/A' && parseFloat(coveragePercent) >= 60 ? '🟡' : '🔴';
+              
+              body = `## 🚀 Enhanced Automated C Test Report
+              
+            ${statusEmoji} **Overall Status:** ${status}  
+            🤖 **AI Model:** ${modelName}  
+            ⏱️ **Execution Time:** ${executionTime}s  
+            ${coverageEmoji} **Code Coverage:** ${coveragePercent}%  
+            🔧 **Compiler:** GCC ${{ env.GCC_VERSION }}
+            
+            ### 📁 Changed Files (${reportData.changed_files?.length || 0})
+            ${reportData.changed_files?.length ? 
+              reportData.changed_files.map(f => `- \`${f}\``).join('\n') : 
+              '- No files detected'}
+            
+            ### 🔍 Functions Analyzed (${reportData.analyzed_functions?.length || 0})
+            ${reportData.analyzed_functions?.length ? 
+              reportData.analyzed_functions.slice(0, 10).map(f => 
+                `- \`${f.name}\` in \`${f.file_path}\` [Complexity: ${f.complexity_score}/10] ${f.signature ? '(' + f.signature + ')' : ''}`
+              ).join('\n') + (reportData.analyzed_functions.length > 10 ? `\n- ... and ${reportData.analyzed_functions.length - 10} more` : '') :
+              '- No C functions detected'}
+            
+            ### 🔧 Compilation Status
+            ${Object.keys(compilationStatus).length ? 
+              Object.entries(compilationStatus).map(([file, status]) => 
+                `- \`${file}\`: ${status === 'success' ? '✅ Compiled' : '❌ Failed'}`
+              ).join('\n') :
+              '- No compilation data'}
+            
+            ### 📊 Generated Reports
+            - 📄 **JSON Report**: \`reports/c_test_automation_report_*.json\`
+            - 📄 **XML Report**: \`reports/c_test_automation_report_*.xml\`  
+            - 📄 **Text Report**: \`reports/c_test_automation_report_*.txt\`
+            - 📄 **Coverage Report**: \`coverage/\`
+            - 🧪 **Generated Tests**: \`tests_pr/pr_generated_tests.c\`
+            - 🔧 **Test Binary**: \`tests_pr/pr_generated_tests\`
+            
+            ### 📈 Coverage Details
+            ${reportData.coverage_metrics?.total_statements ? 
+              `- **Total Statements**: ${reportData.coverage_metrics.total_statements}
+            - **Missing Coverage**: ${reportData.coverage_metrics.missing_statements || 0}` :
+              '- Coverage details not available'}
+            
+            ### 🧪 Test Framework
+            - **Framework**: CMocka (Unit Testing for C)
+            - **Memory Checking**: Valgrind integration
+            - **Static Analysis**: GCC warnings enabled
+            
+            ---
+            <sub>🤖 This report was automatically generated using Enhanced AI-powered C test automation with ${modelName} | Run ID: ${{ github.run_id }}</sub>`;
+            } else {
+              // Fallback comment when no report is available
+              const cFiles = parseInt('${{ env.C_FILES_COUNT }}') || 0;
+              const sourceFiles = parseInt('${{ env.C_SOURCE_FILES_COUNT }}') || 0;
+              
+              body = `## 🚀 Enhanced Automated C Test Report
+              
+            ⚠️ **Status:** C test automation completed with limited results  
+            🔧 **C/C++ Files Changed:** ${cFiles}  
+            📄 **Source Files:** ${sourceFiles}  
+            ⏱️ **Execution Time:** ${{ env.TOTAL_CHANGED_FILES }} total files analyzed  
+            🔧 **Compiler:** GCC ${{ env.GCC_VERSION }}
+            
+            ### 📁 Analysis Summary
+            ${cFiles > 0 ? 
+              `- ${cFiles} C/C++ files were detected and analyzed
+            - ${sourceFiles} source files (.c/.cpp) found
+            - Check the [workflow logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed information` :
+              `- No C/C++ files detected in this PR
+            - Only non-C/C++ files were changed`}
+            
+            ### 📊 Available Artifacts
+            - 📄 Check the **Actions** tab for downloadable reports
+            - 🔍 View the **workflow logs** for execution details
+            - 🧪 CMocka test framework used for unit testing
+            
+            ### 🔧 Development Tools Used
+            - **Compiler**: GCC ${{ env.GCC_VERSION }}
+            - **Test Framework**: CMocka ${{ env.CMOCKA_VERSION }}
+            - **Coverage Tool**: gcov/lcov
+            - **Memory Checker**: Valgrind
+            
+            ---
+            <sub>🤖 Enhanced AI-powered C test automation | Run ID: ${{ github.run_id }}</sub>`;
+            }
+            
+            // Post the comment
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+              console.log('✅ C PR comment posted successfully');
+            } catch (error) {
+              console.error('❌ Failed to post C PR comment:', error.message);
+            }
+
+      - name: 📈 Set C Workflow Status
+        if: always()
+        env:
+          C_FILES_COUNT: ${{ env.C_FILES_COUNT }}
+          C_SOURCE_FILES_COUNT: ${{ env.C_SOURCE_FILES_COUNT }}
+        run: |
+          echo "📈 Setting final C workflow status..."
+          
+          # Determine workflow status based on test results
+          if [ -f "reports/c_test_automation_report_"*".json" ]; then
+            status=$(cat reports/c_test_automation_report_*.json | jq -r '.status // "UNKNOWN"' | head -1)
+            echo "C test automation status: $status"
+            
+            if [ "$status" = "FAILED" ]; then
+              echo "⚠️ C test automation reported FAILED status"
+              echo "📊 Reports have been saved successfully"
+              echo "🔍 Check the reports for detailed C test failure analysis"
+              echo "✅ Workflow completed - reports available for review"
+              # Don't exit 1 - reports are saved and available for analysis
+            elif [ "$status" = "SUCCESS" ]; then
+              echo "✅ C test automation completed successfully"
+              echo "📊 All C tests passed - reports saved"
+            else
+              echo "⚠️ C test automation status unknown: $status"
+              echo "📊 Reports have been saved for review"
+            fi
+            
+            # Always show summary
+            echo ""
+            echo "📋 Final C Summary:"
+            echo "- Reports generated and saved: ✅"
+            echo "- Workflow completed: ✅" 
+            echo "- Review reports in the 'reports' directory"
+            echo "- C source files analyzed: $C_SOURCE_FILES_COUNT"
+            echo "- Total C/C++ files: $C_FILES_COUNT"
+            
+          else
+            echo "⚠️ No C test reports found"
+            # Only fail if we expected reports but got none
+            if [ "$C_SOURCE_FILES_COUNT" -gt "0" ]; then
+              echo "❌ Expected C test reports but none found - this indicates a critical error"
+              echo "🔧 This suggests the C test automation script failed to run properly"
+              exit 1
+            else
+              echo "✅ No C source files to test - workflow successful"
+            fi
+          fi
