@@ -496,8 +496,8 @@ jobs:
         run: |
           echo "📈 Setting final C workflow status..."
           
-          # Determine workflow status based on test results
-          if [ -f "reports/c_test_automation_report_"*".json" ]; then
+          # Check if any JSON reports exist using proper shell globbing
+          if ls reports/c_test_automation_report_*.json >/dev/null 2>&1; then
             status=$(cat reports/c_test_automation_report_*.json | jq -r '.status // "UNKNOWN"' | head -1)
             echo "C test automation status: $status"
             
