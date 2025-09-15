@@ -129,27 +129,18 @@ class CCodeAnalyzer:
         """Parse C function signature from regex match"""
         full_signature = func_match.group(0)
         
-        # Extract modifiers
-        is_static = 'static' in full_signature
-        is_extern = 'extern' in full_signature
-        is_inline = 'inline' in full_signature
+        # Extract modifiers from group 1 (can be None)
+        modifiers = func_match.group(1) or ""
+        is_static = 'static' in modifiers
+        is_extern = 'extern' in modifiers
+        is_inline = 'inline' in modifiers
         
-        # Extract return type and function name
-        signature_line = func_match.group(1).strip()
+        # Extract return type (group 2) and function name (group 3)
+        return_type = func_match.group(2).strip() if func_match.group(2) else "void"
+        func_name = func_match.group(3).strip() if func_match.group(3) else "unknown"
         
-        # Find function name (last identifier before opening parenthesis)
-        name_match = re.search(r'(\w+)\s*\(', signature_line)
-        if not name_match:
-            return FunctionSignature("unknown", "void")
-        
-        func_name = name_match.group(1)
-        
-        # Extract return type (everything before function name)
-        return_type_part = signature_line[:name_match.start()].strip()
-        return_type = self._clean_return_type(return_type_part)
-        
-        # Extract parameters
-        params_match = re.search(r'\((.*?)\)', signature_line, re.DOTALL)
+        # Extract parameters from the full signature
+        params_match = re.search(r'\((.*?)\)', full_signature, re.DOTALL)
         parameters = []
         if params_match:
             params_str = params_match.group(1).strip()
@@ -366,10 +357,19 @@ class CChangeAnalyzerAndTester:
                     # Calculate complexity
                     complexity = self.code_analyzer.calculate_complexity_score(func_code)
                     
-                    # Create function info
+                    # Create function info - handle relative paths correctly
+                    try:
+                        if file_path.is_absolute():
+                            relative_path = str(file_path.relative_to(self.project_root))
+                        else:
+                            relative_path = str(file_path)
+                    except ValueError:
+                        # If file_path is not within project_root, just use the filename
+                        relative_path = file_path.name
+                    
                     func_info = CFunctionInfo(
                         name=signature.name,
-                        file_path=str(file_path.relative_to(self.project_root)),
+                        file_path=relative_path,
                         code=func_code,
                         line_start=start_line,
                         line_end=end_line,
