@@ -45,7 +45,6 @@ jobs:
             libcmocka-dev \
             libcmocka0 \
             valgrind \
-            gcov \
             lcov \
             gdb
           
@@ -56,6 +55,7 @@ jobs:
           # Verify installations
           echo "🔍 Verifying C development tools..."
           gcc --version
+          gcov --version
           cmake --version
           pkg-config --version
           
