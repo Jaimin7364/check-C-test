@@ -1,11 +1,11 @@
 C Test Automation Run Summary
 ============================
-Date: Mon Sep 15 14:49:58 UTC 2025
+Date: Mon Sep 15 14:58:49 UTC 2025
 GCC Version: gcc (Ubuntu 11.5.0-1ubuntu1~24.04) 11.5.0
 CMocka Available: Yes
-Total Changed Files: 1
-C Files Analyzed: 0
-C Source Files: 0
+Total Changed Files: 2
+C Files Analyzed: 1
+C Source Files: 1
 Workflow Status: failure
 🔧 System and compiler information:
 GCC: gcc (Ubuntu 11.5.0-1ubuntu1~24.04) 11.5.0
