@@ -1,13 +1,13 @@
 C Test Automation Run Summary
 ============================
-Date: Mon Sep 15 15:13:45 UTC 2025
-GCC Version: gcc (Ubuntu 11.5.0-1ubuntu1~24.04) 11.5.0
-CMocka Available: Yes
-Total Changed Files: 2
-C Files Analyzed: 1
-C Source Files: 1
-Workflow Status: success
+Date: Mon Sep 15 15:21:46 UTC 2025
+GCC Version: gcc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0
+CMocka Available: No
+Total Changed Files: 
+C Files Analyzed: 
+C Source Files: 
+Workflow Status: cancelled
 🔧 System and compiler information:
-GCC: gcc (Ubuntu 11.5.0-1ubuntu1~24.04) 11.5.0
+GCC: gcc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0
 CMake: cmake version 3.31.6
 OS: Linux runnervmf4ws1 6.11.0-1018-azure #18~24.04.1-Ubuntu SMP Sat Jun 28 04:46:03 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
