@@ -1,8 +1,8 @@
 C Test Automation Run Summary
 ============================
-Date: Mon Sep 15 15:36:11 UTC 2025
+Date: Mon Sep 15 15:40:25 UTC 2025
 GCC Version: gcc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0
-CMocka Available: No
+CMocka Available: Yes
 Total Changed Files: 
 C Files Analyzed: 
 C Source Files: 
