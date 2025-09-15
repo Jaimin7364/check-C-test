@@ -635,7 +635,7 @@ Generate the complete C test file now:"""
         return test_code
 
     def _compile_and_run_tests(self, test_file_path: Path, changed_files: List[str]) -> Dict[str, Any]:
-        """Compile and execute C tests"""
+        """Compile and execute C tests with coverage"""
         self._log(f"🔨 Compiling C tests from {test_file_path}", "INFO")
         
         # Prepare compilation
@@ -650,13 +650,16 @@ Generate the complete C test file now:"""
         # Remove duplicates
         include_dirs = list(set(include_dirs))
         
-        # Compile test executable
+        # Compile test executable with coverage flags
         test_executable = test_file_path.with_suffix('')
         
         compile_cmd = [
             'gcc', '-std=c99', '-Wall', '-Wextra', '-g',
+            '--coverage',  # Enable coverage instrumentation
+            '-fprofile-arcs', '-ftest-coverage',  # Additional coverage flags
             str(test_file_path),
             '-lcmocka',  # Link CMocka library
+            '-lgcov',    # Link gcov library
             '-o', str(test_executable)
         ]
         
@@ -679,7 +682,8 @@ Generate the complete C test file now:"""
                 return {
                     "status": "failure",
                     "output": f"Compilation failed: {compile_result.stderr}",
-                    "test_cases": []
+                    "test_cases": [],
+                    "coverage": {}
                 }
             
             self._log("✅ Compilation successful", "SUCCESS")
@@ -696,13 +700,18 @@ Generate the complete C test file now:"""
             # Parse test results
             test_cases = self._parse_cmocka_output(run_result.stdout, run_result.stderr)
             
+            # Generate coverage reports
+            self._log("📊 Generating code coverage reports...", "INFO")
+            coverage_metrics = self._generate_coverage_reports(changed_files)
+            
             if run_result.returncode == 0:
                 self._log("✅ All tests passed", "SUCCESS")
                 return {
                     "status": "success",
                     "output": run_result.stdout,
                     "stderr": run_result.stderr,
-                    "test_cases": test_cases
+                    "test_cases": test_cases,
+                    "coverage": coverage_metrics
                 }
             else:
                 self._log("❌ Some tests failed", "ERROR")
@@ -711,15 +720,16 @@ Generate the complete C test file now:"""
                 return {
                     "status": "failure",
                     "output": run_result.stdout + "\n" + run_result.stderr,
-                    "test_cases": test_cases
+                    "test_cases": test_cases,
+                    "coverage": coverage_metrics
                 }
                 
         except subprocess.TimeoutExpired:
             self._log("❌ Test execution timed out", "ERROR")
-            return {"status": "failure", "output": "Test execution timed out", "test_cases": []}
+            return {"status": "failure", "output": "Test execution timed out", "test_cases": [], "coverage": {}}
         except Exception as e:
             self._log(f"❌ Test execution failed: {e}", "ERROR")
-            return {"status": "failure", "output": f"Execution error: {str(e)}", "test_cases": []}
+            return {"status": "failure", "output": f"Execution error: {str(e)}", "test_cases": [], "coverage": {}}
     
     def _parse_cmocka_output(self, stdout: str, stderr: str) -> List[TestCaseResult]:
         """Parse CMocka test output"""
@@ -770,6 +780,186 @@ Generate the complete C test file now:"""
             ))
         
         return test_cases
+
+    def _generate_coverage_reports(self, changed_files: List[str]) -> Dict[str, Any]:
+        """Generate code coverage reports using gcov and lcov"""
+        coverage_metrics = {
+            "line_coverage": 0.0,
+            "function_coverage": 0.0,
+            "branch_coverage": 0.0,
+            "files": {},
+            "summary": "No coverage data available"
+        }
+        
+        try:
+            # Create coverage directory
+            coverage_dir = self.project_root / "coverage"
+            coverage_dir.mkdir(exist_ok=True)
+            
+            # Generate gcov files for each changed C file
+            for file_path in changed_files:
+                if file_path.endswith('.c'):
+                    self._log(f"📊 Generating coverage for {file_path}...", "INFO")
+                    
+                    # Run gcov on the source file
+                    gcov_cmd = ['gcov', '-b', '-c', file_path]
+                    gcov_result = subprocess.run(
+                        gcov_cmd,
+                        capture_output=True, text=True,
+                        cwd=str(self.project_root)
+                    )
+                    
+                    if gcov_result.returncode == 0:
+                        # Parse gcov output
+                        coverage_info = self._parse_gcov_output(gcov_result.stdout, file_path)
+                        coverage_metrics["files"][file_path] = coverage_info
+                        self._log(f"✅ Coverage generated for {file_path}", "SUCCESS")
+                    else:
+                        self._log(f"⚠️ Could not generate coverage for {file_path}: {gcov_result.stderr}", "WARNING")
+            
+            # Generate lcov HTML report if lcov is available
+            try:
+                # Initialize lcov info file
+                lcov_info = coverage_dir / "coverage.info"
+                
+                # Capture coverage data
+                lcov_capture_cmd = [
+                    'lcov', '--capture', '--directory', str(self.project_root),
+                    '--output-file', str(lcov_info)
+                ]
+                
+                capture_result = subprocess.run(
+                    lcov_capture_cmd,
+                    capture_output=True, text=True,
+                    cwd=str(self.project_root)
+                )
+                
+                if capture_result.returncode == 0:
+                    # Generate HTML report
+                    html_dir = coverage_dir / "html"
+                    html_dir.mkdir(exist_ok=True)
+                    
+                    genhtml_cmd = [
+                        'genhtml', str(lcov_info),
+                        '--output-directory', str(html_dir),
+                        '--title', 'C Test Coverage Report'
+                    ]
+                    
+                    html_result = subprocess.run(
+                        genhtml_cmd,
+                        capture_output=True, text=True,
+                        cwd=str(self.project_root)
+                    )
+                    
+                    if html_result.returncode == 0:
+                        self._log("✅ HTML coverage report generated", "SUCCESS")
+                        coverage_metrics["html_report"] = str(html_dir / "index.html")
+                        
+                        # Extract summary from lcov info
+                        coverage_summary = self._extract_lcov_summary(str(lcov_info))
+                        coverage_metrics.update(coverage_summary)
+                    else:
+                        self._log(f"⚠️ HTML report generation failed: {html_result.stderr}", "WARNING")
+                else:
+                    self._log(f"⚠️ lcov capture failed: {capture_result.stderr}", "WARNING")
+                    
+            except FileNotFoundError:
+                self._log("⚠️ lcov not found, skipping HTML report generation", "WARNING")
+            
+            # Calculate overall metrics
+            if coverage_metrics["files"]:
+                total_lines = sum(info.get("total_lines", 0) for info in coverage_metrics["files"].values())
+                covered_lines = sum(info.get("covered_lines", 0) for info in coverage_metrics["files"].values())
+                
+                if total_lines > 0:
+                    coverage_metrics["line_coverage"] = (covered_lines / total_lines) * 100
+                    coverage_metrics["summary"] = f"Line coverage: {coverage_metrics['line_coverage']:.1f}% ({covered_lines}/{total_lines})"
+                    
+        except Exception as e:
+            self._log(f"⚠️ Coverage generation failed: {e}", "WARNING")
+            coverage_metrics["error"] = str(e)
+        
+        return coverage_metrics
+    
+    def _parse_gcov_output(self, gcov_output: str, file_path: str) -> Dict[str, Any]:
+        """Parse gcov output to extract coverage metrics"""
+        coverage_info = {
+            "file": file_path,
+            "total_lines": 0,
+            "covered_lines": 0,
+            "line_coverage": 0.0
+        }
+        
+        try:
+            # Parse lines like: "Lines executed:75.00% of 20"
+            lines_match = re.search(r'Lines executed:([0-9.]+)% of (\d+)', gcov_output)
+            if lines_match:
+                coverage_percent = float(lines_match.group(1))
+                total_lines = int(lines_match.group(2))
+                covered_lines = int((coverage_percent / 100) * total_lines)
+                
+                coverage_info.update({
+                    "total_lines": total_lines,
+                    "covered_lines": covered_lines,
+                    "line_coverage": coverage_percent
+                })
+            
+            # Parse branches if available
+            branches_match = re.search(r'Branches executed:([0-9.]+)% of (\d+)', gcov_output)
+            if branches_match:
+                coverage_info["branch_coverage"] = float(branches_match.group(1))
+                coverage_info["total_branches"] = int(branches_match.group(2))
+                
+        except Exception as e:
+            self._log(f"⚠️ Error parsing gcov output: {e}", "WARNING")
+        
+        return coverage_info
+    
+    def _extract_lcov_summary(self, lcov_file: str) -> Dict[str, Any]:
+        """Extract summary information from lcov info file"""
+        summary = {}
+        
+        try:
+            with open(lcov_file, 'r') as f:
+                content = f.read()
+            
+            # Parse lcov format for summary data
+            # Look for LF (lines found) and LH (lines hit)
+            lf_match = re.search(r'LF:(\d+)', content)
+            lh_match = re.search(r'LH:(\d+)', content)
+            
+            if lf_match and lh_match:
+                total_lines = int(lf_match.group(1))
+                hit_lines = int(lh_match.group(1))
+                
+                if total_lines > 0:
+                    line_coverage = (hit_lines / total_lines) * 100
+                    summary.update({
+                        "line_coverage": line_coverage,
+                        "total_lines": total_lines,
+                        "covered_lines": hit_lines
+                    })
+            
+            # Parse function coverage if available
+            fnf_match = re.search(r'FNF:(\d+)', content)
+            fnh_match = re.search(r'FNH:(\d+)', content)
+            
+            if fnf_match and fnh_match:
+                total_functions = int(fnf_match.group(1))
+                hit_functions = int(fnh_match.group(1))
+                
+                if total_functions > 0:
+                    func_coverage = (hit_functions / total_functions) * 100
+                    summary.update({
+                        "function_coverage": func_coverage,
+                        "total_functions": total_functions,
+                        "covered_functions": hit_functions
+                    })
+            
+        except Exception as e:
+            self._log(f"⚠️ Error extracting lcov summary: {e}", "WARNING")
+        
+        return summary
 
     def _generate_json_report(self, report: TestReport) -> str:
         """Generate JSON report for C project"""
@@ -937,6 +1127,42 @@ Generate the complete C test file now:"""
                 "  " + "─" * 40,
                 ""
             ])
+        
+        # Add coverage information
+        if report.coverage_metrics:
+            lines.extend([
+                "📊 CODE COVERAGE:",
+                ""
+            ])
+            
+            if "summary" in report.coverage_metrics:
+                lines.append(f"  {report.coverage_metrics['summary']}")
+                lines.append("")
+            
+            if "line_coverage" in report.coverage_metrics:
+                lines.append(f"  Line Coverage: {report.coverage_metrics['line_coverage']:.1f}%")
+            
+            if "function_coverage" in report.coverage_metrics:
+                lines.append(f"  Function Coverage: {report.coverage_metrics['function_coverage']:.1f}%")
+            
+            if "branch_coverage" in report.coverage_metrics:
+                lines.append(f"  Branch Coverage: {report.coverage_metrics['branch_coverage']:.1f}%")
+            
+            # File-level coverage details
+            if "files" in report.coverage_metrics and report.coverage_metrics["files"]:
+                lines.extend([
+                    "",
+                    "  📁 File Coverage Details:"
+                ])
+                
+                for file_path, coverage_info in report.coverage_metrics["files"].items():
+                    if "line_coverage" in coverage_info:
+                        lines.append(f"    {file_path}: {coverage_info['line_coverage']:.1f}% ({coverage_info.get('covered_lines', 0)}/{coverage_info.get('total_lines', 0)} lines)")
+            
+            if "html_report" in report.coverage_metrics:
+                lines.append(f"  📋 HTML Report: {report.coverage_metrics['html_report']}")
+            
+            lines.append("")
         
         lines.extend([
             "📝 EXECUTION LOGS (Last 25 entries):",
@@ -1111,7 +1337,7 @@ Generate the complete C test file now:"""
             changed_files=changed_files,
             analyzed_functions=all_changed_functions,
             test_results=test_results,
-            coverage_metrics={},  # C coverage would need gcov integration
+            coverage_metrics=test_results.get("coverage", {}),  # Include actual coverage data
             status=overall_status,
             execution_time=execution_time,
             logs=self.logs,
