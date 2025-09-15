@@ -1,0 +1,1 @@
+genhtml /home/runner/work/check-C-test/check-C-test/coverage/coverage.info --output-directory /home/runner/work/check-C-test/check-C-test/coverage/html --title 'C Test Coverage Report' --ignore-errors version
