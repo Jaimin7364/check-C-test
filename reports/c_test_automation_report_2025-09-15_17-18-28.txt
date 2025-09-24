@@ -1,0 +1,122 @@
+🚀 C Project Test Automation Report
+Generated: 2025-09-15 17:18:28
+Model Used: llama-3.3-70b-versatile
+Execution Time: 3.04 seconds
+Status: SUCCESS
+
+============================================================
+
+📁 CHANGED FILES:
+
+  1. coverage/coverage.info
+  2. main.c
+  3. reports/c_run_summary.txt
+  4. reports/c_test_automation_report_2025-09-15_15-50-39.json
+  5. reports/c_test_automation_report_2025-09-15_15-50-39.txt
+  6. reports/c_test_automation_report_2025-09-15_15-50-39.xml
+  7. tests_pr/pr_generated_tests
+  8. tests_pr/pr_generated_tests.c
+  9. tests_pr/pr_generated_tests.gcda
+  10. tests_pr/pr_generated_tests.gcno
+
+🔨 COMPILATION STATUS:
+
+  main.c: ✅ SUCCESS
+  generated_test_file: ✅ SUCCESS
+
+🔍 ANALYZED C FUNCTIONS (2 total):
+
+  1. int add (2 params) [Complexity: 1/10]
+     File: main.c (lines 1-5)
+
+  2. int main (void) [Complexity: 1/10]
+     File: main.c (lines 5-18)
+
+🧪 TEST RESULTS:
+  Status: SUCCESS
+
+📋 INDIVIDUAL TEST CASES:
+
+  1. test_add_normal_operation
+     Status: ✅ PASS
+
+  2. test_add_negative_numbers
+     Status: ✅ PASS
+
+  3. test_add_mixed_numbers
+     Status: ✅ PASS
+
+  4. test_add_zero
+     Status: ✅ PASS
+
+  5. test_add_max_int
+     Status: ✅ PASS
+
+  6. test_add_min_int
+     Status: ✅ PASS
+
+  7. test_add_overflow
+     Status: ✅ PASS
+
+  Test Output:
+  ────────────────────────────────────────
+  [==========] tests: Running 7 test(s).
+  [ RUN      ] test_add_normal_operation
+  [       OK ] test_add_normal_operation
+  [ RUN      ] test_add_negative_numbers
+  [       OK ] test_add_negative_numbers
+  [ RUN      ] test_add_mixed_numbers
+  [       OK ] test_add_mixed_numbers
+  [ RUN      ] test_add_zero
+  [       OK ] test_add_zero
+  [ RUN      ] test_add_max_int
+  [       OK ] test_add_max_int
+  [ RUN      ] test_add_min_int
+  [       OK ] test_add_min_int
+  [ RUN      ] test_add_overflow
+  [       OK ] test_add_overflow
+  ────────────────────────────────────────
+
+📊 CODE COVERAGE:
+
+  Line coverage: 100.0% (33/33)
+
+  Line Coverage: 100.0%
+  Function Coverage: 100.0%
+  Branch Coverage: 0.0%
+
+  📁 File Coverage Details:
+    main.c: 0.0% (0/0 lines)
+    tests_pr/pr_generated_tests.c: 100.0% (33/33 lines)
+  📋 HTML Report: /home/runner/work/check-C-test/check-C-test/coverage/html/index.html
+
+📝 EXECUTION LOGS (Last 25 entries):
+
+  [2025-09-15 17:18:25] [INFO] ✅ Found 2 functions in main.c
+  [2025-09-15 17:18:25] [INFO] 📊 C Function Analysis Summary:
+  [2025-09-15 17:18:25] [INFO]    Total Functions: 2
+  [2025-09-15 17:18:25] [INFO]    Static Functions: 0
+  [2025-09-15 17:18:25] [INFO]    Average Complexity: 1.0/10
+  [2025-09-15 17:18:25] [INFO] 🧠 Generating C test cases using llama-3.3-70b-versatile...
+  [2025-09-15 17:18:25] [INFO] 🤖 Generating C test code (attempt 1/3)...
+  [2025-09-15 17:18:27] [SUCCESS] ✅ Generated valid-looking C test code
+  [2025-09-15 17:18:27] [SUCCESS] ✅ Generated and saved C tests to /home/runner/work/check-C-test/check-C-test/tests_pr/pr_generated_tests.c
+  [2025-09-15 17:18:27] [INFO] 🏃 Compiling and executing C tests...
+  [2025-09-15 17:18:27] [INFO] 🔨 Compiling C tests from /home/runner/work/check-C-test/check-C-test/tests_pr/pr_generated_tests.c
+  [2025-09-15 17:18:27] [INFO] 🔧 Compilation command: gcc -std=c99 -Wall -Wextra -g --coverage -fprofile-arcs -ftest-coverage /home/runner/work/check-C-test/check-C-test/tests_pr/pr_generated_tests.c -lcmocka -lgcov -o /home/runner/work/check-C-test/check-C-test/tests_pr/pr_generated_tests -I /home/runner/work/check-C-test/check-C-test -I /home/runner/work/check-C-test/check-C-test/tests_pr
+  [2025-09-15 17:18:27] [SUCCESS] ✅ Compilation successful
+  [2025-09-15 17:18:27] [INFO] 🧪 Executing C tests: /home/runner/work/check-C-test/check-C-test/tests_pr/pr_generated_tests
+  [2025-09-15 17:18:27] [INFO] 📊 Generating code coverage reports...
+  [2025-09-15 17:18:27] [INFO] 📊 Found version-specific gcov: gcov-11
+  [2025-09-15 17:18:27] [INFO] 📊 Using gcov tool: gcov-11
+  [2025-09-15 17:18:27] [INFO] 📊 Generating coverage for main.c...
+  [2025-09-15 17:18:27] [SUCCESS] ✅ Coverage generated for main.c
+  [2025-09-15 17:18:27] [INFO] 📊 Generating coverage for tests_pr/pr_generated_tests.c...
+  [2025-09-15 17:18:27] [SUCCESS] ✅ Coverage generated for tests_pr/pr_generated_tests.c
+  [2025-09-15 17:18:28] [SUCCESS] ✅ HTML coverage report generated
+  [2025-09-15 17:18:28] [SUCCESS] ✅ All tests passed
+  [2025-09-15 17:18:28] [INFO] 📄 JSON report saved: /home/runner/work/check-C-test/check-C-test/reports/c_test_automation_report_2025-09-15_17-18-28.json
+  [2025-09-15 17:18:28] [INFO] 📄 XML report saved: /home/runner/work/check-C-test/check-C-test/reports/c_test_automation_report_2025-09-15_17-18-28.xml
+
+============================================================
+Report completed at: 2025-09-15 17:18:28

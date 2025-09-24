@@ -62,6 +62,7 @@ class TestCaseResult:
     error_message: str = ""
     failure_reason: str = ""
     test_method: str = ""
+    explanation: str = ""
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
@@ -71,7 +72,8 @@ class TestCaseResult:
             "execution_time": self.execution_time,
             "error_message": self.error_message,
             "failure_reason": self.failure_reason,
-            "test_method": self.test_method
+            "test_method": self.test_method,
+            "explanation": self.explanation
         }
 
 @dataclass
@@ -698,7 +700,7 @@ Generate the complete C test file now:"""
             )
             
             # Parse test results
-            test_cases = self._parse_cmocka_output(run_result.stdout, run_result.stderr)
+            test_cases = self._parse_cmocka_output(run_result.stdout, run_result.stderr, test_file_path)
             
             # Generate coverage reports
             self._log("📊 Generating code coverage reports...", "INFO")
@@ -731,10 +733,15 @@ Generate the complete C test file now:"""
             self._log(f"❌ Test execution failed: {e}", "ERROR")
             return {"status": "failure", "output": f"Execution error: {str(e)}", "test_cases": [], "coverage": {}}
     
-    def _parse_cmocka_output(self, stdout: str, stderr: str) -> List[TestCaseResult]:
+    def _parse_cmocka_output(self, stdout: str, stderr: str, test_file_path: Path = None) -> List[TestCaseResult]:
         """Parse CMocka test output"""
         test_cases = []
         full_output = stdout + "\n" + stderr
+        
+        # Extract test explanations if test file is available
+        explanations = {}
+        if test_file_path and test_file_path.exists():
+            explanations = self._extract_test_explanations(test_file_path)
         
         # Look for CMocka test patterns
         # CMocka typically outputs: [ RUN      ] test_name
@@ -756,7 +763,8 @@ Generate the complete C test file now:"""
             test_cases.append(TestCaseResult(
                 name=test_name,
                 status="PASS",
-                test_method=test_name
+                test_method=test_name,
+                explanation=explanations.get(test_name, "")
             ))
             running_tests.discard(test_name)
         
@@ -766,7 +774,8 @@ Generate the complete C test file now:"""
                 name=test_name,
                 status="FAIL",
                 test_method=test_name,
-                failure_reason="Test assertion failed"
+                failure_reason="Test assertion failed",
+                explanation=explanations.get(test_name, "")
             ))
             running_tests.discard(test_name)
         
@@ -776,7 +785,8 @@ Generate the complete C test file now:"""
                 name=test_name,
                 status="ERROR",
                 test_method=test_name,
-                error_message="Test did not complete"
+                error_message="Test did not complete",
+                explanation=explanations.get(test_name, "")
             ))
         
         return test_cases
@@ -890,6 +900,91 @@ Generate the complete C test file now:"""
             coverage_metrics["error"] = str(e)
         
         return coverage_metrics
+    
+    def _extract_test_explanations(self, test_file_path: Path) -> Dict[str, str]:
+        """Extract explanations for each test case based on test name patterns"""
+        explanations = {}
+        
+        try:
+            if not test_file_path.exists():
+                return explanations
+                
+            with open(test_file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Extract test function names and generate explanations based on naming patterns
+            test_pattern = re.compile(r'static\s+void\s+(test_\w+)\s*\(', re.MULTILINE)
+            test_matches = test_pattern.findall(content)
+            
+            for test_name in test_matches:
+                explanation = self._generate_test_explanation(test_name)
+                explanations[test_name] = explanation
+                
+        except Exception as e:
+            self._log(f"⚠️ Could not extract test explanations: {e}", "WARNING")
+        
+        return explanations
+    
+    def _generate_test_explanation(self, test_name: str) -> str:
+        """Generate human-readable explanation for test based on test name"""
+        # Remove 'test_' prefix and split by underscores
+        base_name = test_name.replace('test_', '', 1)
+        parts = base_name.split('_')
+        
+        # Common test explanation patterns
+        explanations = {
+            'normal_operation': 'Tests basic functionality with standard valid inputs',
+            'negative_numbers': 'Tests behavior with negative number inputs',
+            'mixed_numbers': 'Tests with a mix of positive and negative numbers', 
+            'zero': 'Tests behavior with zero values',
+            'max_int': 'Tests with maximum integer value (boundary condition)',
+            'min_int': 'Tests with minimum integer value (boundary condition)', 
+            'overflow': 'Tests integer overflow behavior',
+            'underflow': 'Tests integer underflow behavior',
+            'null_pointer': 'Tests handling of NULL pointer inputs',
+            'invalid_input': 'Tests behavior with invalid or malformed inputs',
+            'boundary_condition': 'Tests edge cases and boundary conditions',
+            'error_handling': 'Tests proper error handling and return codes',
+            'memory_allocation': 'Tests dynamic memory allocation and cleanup',
+            'string_operations': 'Tests string manipulation and comparison',
+            'empty_string': 'Tests behavior with empty string inputs',
+            'large_input': 'Tests with large input values',
+            'small_input': 'Tests with small input values',
+            'edge_case': 'Tests uncommon or edge case scenarios'
+        }
+        
+        # Try to match the test pattern to known explanations
+        test_key = '_'.join(parts)
+        if test_key in explanations:
+            return explanations[test_key]
+        
+        # Try partial matches for compound test names
+        for key, explanation in explanations.items():
+            if key in test_key:
+                return explanation
+        
+        # Generate explanation based on function name and common patterns
+        function_name = parts[0] if parts else 'function'
+        
+        if 'null' in test_key.lower():
+            return f'Tests {function_name} behavior with NULL values'
+        elif 'empty' in test_key.lower():
+            return f'Tests {function_name} with empty inputs'
+        elif 'invalid' in test_key.lower() or 'error' in test_key.lower():
+            return f'Tests {function_name} error handling with invalid inputs'
+        elif 'max' in test_key.lower() or 'large' in test_key.lower():
+            return f'Tests {function_name} with maximum/large values'
+        elif 'min' in test_key.lower() or 'small' in test_key.lower():
+            return f'Tests {function_name} with minimum/small values'
+        elif 'negative' in test_key.lower():
+            return f'Tests {function_name} with negative values'
+        elif 'positive' in test_key.lower():
+            return f'Tests {function_name} with positive values'
+        elif 'boundary' in test_key.lower() or 'edge' in test_key.lower():
+            return f'Tests {function_name} boundary conditions and edge cases'
+        else:
+            # Default explanation
+            return f'Tests {function_name} functionality with specific input conditions'
     
     def _find_compatible_gcov(self) -> str:
         """Find the gcov version that matches the GCC compiler"""
@@ -1152,6 +1247,8 @@ Generate the complete C test file now:"""
             case_elem = ET.SubElement(test_cases_elem, "test_case")
             case_elem.set("name", test_case.name)
             case_elem.set("status", test_case.status)
+            if test_case.explanation:
+                ET.SubElement(case_elem, "explanation").text = test_case.explanation
             if test_case.failure_reason:
                 ET.SubElement(case_elem, "failure_reason").text = test_case.failure_reason
         
@@ -1223,6 +1320,9 @@ Generate the complete C test file now:"""
                 status_emoji = "✅" if test_case.status == "PASS" else "❌" if test_case.status in ["FAIL", "ERROR"] else "⚠️"
                 lines.append(f"  {i}. {test_case.name}")
                 lines.append(f"     Status: {status_emoji} {test_case.status}")
+                
+                if test_case.explanation:
+                    lines.append(f"     Purpose: {test_case.explanation}")
                 
                 if test_case.failure_reason and test_case.status in ["FAIL", "ERROR"]:
                     lines.append(f"     Reason: {test_case.failure_reason}")
