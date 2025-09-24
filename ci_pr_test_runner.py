@@ -77,6 +77,34 @@ class TestCaseResult:
         }
 
 @dataclass
+class CodeChange:
+    """Represents a code change with line information"""
+    file_path: str
+    line_start: int
+    line_end: int
+    change_type: str  # "added", "modified", "deleted"
+    content: str = ""
+
+@dataclass
+class DependencyInfo:
+    """Information about function/file dependencies"""
+    function_calls: Set[str] = field(default_factory=set)
+    included_files: Set[str] = field(default_factory=set)
+    global_variables: Set[str] = field(default_factory=set)
+    macro_usage: Set[str] = field(default_factory=set)
+    struct_usage: Set[str] = field(default_factory=set)
+
+@dataclass
+class TestChunk:
+    """Represents a testing chunk with its dependencies"""
+    chunk_id: str
+    primary_changes: List[CodeChange]
+    dependent_functions: List[CFunctionInfo]
+    dependent_files: Set[str]
+    test_type: str  # "unit", "integration", "system"
+    complexity_score: int = 0
+
+@dataclass
 class TestReport:
     """Data structure for test execution report"""
     timestamp: str
@@ -90,6 +118,283 @@ class TestReport:
     logs: List[str] = field(default_factory=list)
     compilation_status: Dict[str, bool] = field(default_factory=dict)
     test_cases: List[TestCaseResult] = field(default_factory=list)
+
+class CCodeAnalyzer:
+    """C code analyzer for function extraction"""
+    
+    def __init__(self, project_root: Path):
+        self.project_root = project_root
+        self.c_keywords = {'auto', 'break', 'case', 'char', 'const', 'continue', 'default', 'do',
+                          'double', 'else', 'enum', 'extern', 'float', 'for', 'goto', 'if',
+                          'int', 'long', 'register', 'return', 'short', 'signed', 'sizeof', 'static',
+                          'struct', 'switch', 'typedef', 'union', 'unsigned', 'void', 'volatile', 'while'}
+
+class CDependencyAnalyzer:
+    """Analyzes dependencies and connections between C code components"""
+    
+    def __init__(self, project_root: Path):
+        self.project_root = project_root
+        self.function_definitions = {}  # function_name -> CFunctionInfo
+        self.function_calls_map = {}    # function_name -> set of called functions
+        self.file_dependencies = {}     # file_path -> set of dependent files
+        
+    def analyze_git_changes(self) -> List[CodeChange]:
+        """Analyze git changes to identify what lines were modified"""
+        changes = []
+        
+        try:
+            # Get git diff with line numbers
+            result = subprocess.run(
+                ['git', 'diff', '--unified=0', 'HEAD~1', 'HEAD'],
+                capture_output=True, text=True, cwd=str(self.project_root)
+            )
+            
+            if result.returncode != 0:
+                # Try with staged changes if no commit history
+                result = subprocess.run(
+                    ['git', 'diff', '--unified=0', '--cached'],
+                    capture_output=True, text=True, cwd=str(self.project_root)
+                )
+                
+            if result.returncode != 0:
+                # Try with unstaged changes
+                result = subprocess.run(
+                    ['git', 'diff', '--unified=0'],
+                    capture_output=True, text=True, cwd=str(self.project_root)
+                )
+            
+            changes = self._parse_git_diff(result.stdout)
+            
+        except Exception as e:
+            print(f"⚠️ Could not analyze git changes: {e}")
+            
+        return changes
+    
+    def _parse_git_diff(self, diff_output: str) -> List[CodeChange]:
+        """Parse git diff output to extract line changes"""
+        changes = []
+        current_file = None
+        
+        lines = diff_output.split('\n')
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            
+            # File header
+            if line.startswith('diff --git'):
+                i += 1
+                continue
+            elif line.startswith('+++'):
+                # Extract filename
+                file_match = re.search(r'\+\+\+ b/(.+)', line)
+                if file_match:
+                    current_file = file_match.group(1)
+                i += 1
+                continue
+            elif line.startswith('@@'):
+                # Parse hunk header: @@ -old_start,old_count +new_start,new_count @@
+                hunk_match = re.search(r'@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@', line)
+                if hunk_match and current_file and current_file.endswith('.c'):
+                    new_start = int(hunk_match.group(3))
+                    new_count = int(hunk_match.group(4)) if hunk_match.group(4) else 1
+                    
+                    # Collect the actual changes
+                    content_lines = []
+                    j = i + 1
+                    while j < len(lines) and not lines[j].startswith('@@') and not lines[j].startswith('diff'):
+                        if lines[j].startswith('+') and not lines[j].startswith('+++'):
+                            content_lines.append(lines[j][1:])  # Remove '+' prefix
+                        j += 1
+                    
+                    if new_count > 0:
+                        changes.append(CodeChange(
+                            file_path=current_file,
+                            line_start=new_start,
+                            line_end=new_start + new_count - 1,
+                            change_type="modified",
+                            content='\n'.join(content_lines)
+                        ))
+                i += 1
+                continue
+            
+            i += 1
+        
+        return changes
+    
+    def build_dependency_map(self, files: List[str]) -> Dict[str, DependencyInfo]:
+        """Build comprehensive dependency map for given files"""
+        dependency_map = {}
+        
+        for file_path in files:
+            if file_path.endswith('.c') or file_path.endswith('.h'):
+                full_path = self.project_root / file_path
+                if full_path.exists():
+                    dependency_map[file_path] = self._analyze_file_dependencies(full_path)
+        
+        return dependency_map
+    
+    def _analyze_file_dependencies(self, file_path: Path) -> DependencyInfo:
+        """Analyze dependencies in a single C file"""
+        deps = DependencyInfo()
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Find function calls
+            function_call_pattern = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', re.MULTILINE)
+            for match in function_call_pattern.finditer(content):
+                func_name = match.group(1)
+                # Filter out C keywords and common macros
+                if func_name not in {'if', 'while', 'for', 'switch', 'sizeof', 'return'}:
+                    deps.function_calls.add(func_name)
+            
+            # Find includes
+            include_pattern = re.compile(r'#include\s*[<"]([^>"]+)[>"]')
+            for match in include_pattern.finditer(content):
+                deps.included_files.add(match.group(1))
+            
+            # Find global variable usage
+            global_var_pattern = re.compile(r'extern\s+\w+\s+([a-zA-Z_][a-zA-Z0-9_]*)')
+            for match in global_var_pattern.finditer(content):
+                deps.global_variables.add(match.group(1))
+            
+            # Find macro usage
+            macro_pattern = re.compile(r'#define\s+([a-zA-Z_][a-zA-Z0-9_]*)')
+            for match in macro_pattern.finditer(content):
+                deps.macro_usage.add(match.group(1))
+            
+            # Find struct usage
+            struct_pattern = re.compile(r'struct\s+([a-zA-Z_][a-zA-Z0-9_]*)')
+            for match in struct_pattern.finditer(content):
+                deps.struct_usage.add(match.group(1))
+                
+        except Exception as e:
+            print(f"⚠️ Error analyzing dependencies in {file_path}: {e}")
+        
+        return deps
+    
+    def create_test_chunks(self, changes: List[CodeChange], all_functions: List[CFunctionInfo]) -> List[TestChunk]:
+        """Create intelligent test chunks based on changes and their dependencies"""
+        chunks = []
+        dependency_map = self.build_dependency_map([change.file_path for change in changes])
+        
+        # Group changes by file first
+        changes_by_file = {}
+        for change in changes:
+            if change.file_path not in changes_by_file:
+                changes_by_file[change.file_path] = []
+            changes_by_file[change.file_path].append(change)
+        
+        chunk_id = 0
+        for file_path, file_changes in changes_by_file.items():
+            # Find functions affected by these changes
+            affected_functions = self._find_affected_functions(file_changes, all_functions)
+            
+            # Analyze dependencies for these functions
+            connected_functions = self._find_connected_functions(
+                affected_functions, all_functions, dependency_map
+            )
+            
+            # Determine test type based on scope
+            test_type = self._determine_test_type(affected_functions, connected_functions)
+            
+            # Calculate complexity
+            complexity = self._calculate_chunk_complexity(file_changes, connected_functions)
+            
+            chunk = TestChunk(
+                chunk_id=f"chunk_{chunk_id}",
+                primary_changes=file_changes,
+                dependent_functions=connected_functions,
+                dependent_files=self._find_dependent_files(file_path, dependency_map),
+                test_type=test_type,
+                complexity_score=complexity
+            )
+            
+            chunks.append(chunk)
+            chunk_id += 1
+        
+        return chunks
+    
+    def _find_affected_functions(self, changes: List[CodeChange], all_functions: List[CFunctionInfo]) -> List[CFunctionInfo]:
+        """Find functions that are directly affected by the changes"""
+        affected = []
+        
+        for change in changes:
+            for func in all_functions:
+                if (func.file_path == change.file_path and 
+                    func.line_start <= change.line_end and 
+                    func.line_end >= change.line_start):
+                    if func not in affected:
+                        affected.append(func)
+        
+        return affected
+    
+    def _find_connected_functions(self, primary_functions: List[CFunctionInfo], 
+                                 all_functions: List[CFunctionInfo],
+                                 dependency_map: Dict[str, DependencyInfo]) -> List[CFunctionInfo]:
+        """Find all functions connected to the primary changed functions"""
+        connected = list(primary_functions)  # Start with primary functions
+        visited = {func.name for func in primary_functions}
+        
+        # BFS to find connected functions
+        queue = list(primary_functions)
+        
+        while queue:
+            current_func = queue.pop(0)
+            
+            # Check dependencies in the same file and related files
+            for file_path, deps in dependency_map.items():
+                if current_func.name in deps.function_calls:
+                    # This file calls our function, check its functions
+                    file_functions = [f for f in all_functions if f.file_path == file_path]
+                    for func in file_functions:
+                        if func.name not in visited:
+                            connected.append(func)
+                            visited.add(func.name)
+                            queue.append(func)
+                
+                # Check if current function calls other functions
+                if file_path == current_func.file_path:
+                    for called_func_name in deps.function_calls:
+                        called_func = next((f for f in all_functions if f.name == called_func_name), None)
+                        if called_func and called_func.name not in visited:
+                            connected.append(called_func)
+                            visited.add(called_func.name)
+                            queue.append(called_func)
+        
+        return connected
+    
+    def _determine_test_type(self, primary_functions: List[CFunctionInfo], 
+                           connected_functions: List[CFunctionInfo]) -> str:
+        """Determine the type of testing needed based on scope"""
+        if len(connected_functions) <= len(primary_functions):
+            return "unit"
+        elif len(connected_functions) <= len(primary_functions) * 3:
+            return "integration"
+        else:
+            return "system"
+    
+    def _calculate_chunk_complexity(self, changes: List[CodeChange], 
+                                  connected_functions: List[CFunctionInfo]) -> int:
+        """Calculate complexity score for the test chunk"""
+        base_complexity = len(changes)
+        function_complexity = sum(func.complexity_score for func in connected_functions)
+        connection_complexity = len(connected_functions) - len(changes)
+        
+        return min(base_complexity + function_complexity + connection_complexity, 10)
+    
+    def _find_dependent_files(self, file_path: str, dependency_map: Dict[str, DependencyInfo]) -> Set[str]:
+        """Find files that depend on the given file"""
+        dependent_files = {file_path}
+        
+        # Find files that include this file
+        for other_file, deps in dependency_map.items():
+            if file_path.replace('.c', '.h') in deps.included_files:
+                dependent_files.add(other_file)
+        
+        return dependent_files
 
 class CCodeAnalyzer:
     """C code analyzer for function extraction"""
@@ -280,6 +585,7 @@ class CChangeAnalyzerAndTester:
         
         self.client = Groq(api_key=GROQ_API_KEY)
         self.code_analyzer = CCodeAnalyzer(self.project_root)
+        self.dependency_analyzer = CDependencyAnalyzer(self.project_root)
         self.test_validator = CTestValidator(self.project_root)
         
         self.start_time = datetime.now()
@@ -1302,6 +1608,19 @@ Generate the complete C test file now:"""
             lines.append(f"  {i}. {storage}{func.signature.return_type} {func.name}{param_info} [Complexity: {func.complexity_score}/10]")
             lines.append(f"     File: {func.file_path} (lines {func.line_start}-{func.line_end})")
             lines.append("")
+
+        # Add chunk information if available
+        if "chunks_processed" in report.test_results:
+            lines.extend([
+                "🧩 INTELLIGENT TEST CHUNKING:",
+                f"  Total Chunks: {report.test_results['chunks_processed']}",
+                ""
+            ])
+            
+            if "chunk_details" in report.test_results:
+                for chunk_detail in report.test_results["chunk_details"]:
+                    lines.append(f"  📦 {chunk_detail['id']}: {chunk_detail['type'].upper()} testing ({chunk_detail['functions']} functions)")
+                lines.append("")
         
         lines.extend([
             "🧪 TEST RESULTS:",
@@ -1417,14 +1736,25 @@ Generate the complete C test file now:"""
         self._log(f"📄 Text report saved: {text_path}", "INFO")
 
     def run(self):
-        """Main runner for C project testing"""
-        self._log("🚀 Starting C Project Test Automation", "INFO")
+        """Main runner for C project testing with intelligent chunking"""
+        self._log("🚀 Starting C Project Test Automation with Smart Chunking", "INFO")
         
-        changed_files = self._get_changed_files()
+        # Step 1: Analyze git changes to get precise line changes
+        code_changes = self.dependency_analyzer.analyze_git_changes()
+        if not code_changes:
+            self._log("No code changes detected. Analyzing all C files as fallback.", "INFO")
+            changed_files = self._get_changed_files()
+        else:
+            changed_files = list(set(change.file_path for change in code_changes))
+            self._log(f"📋 Detected {len(code_changes)} code changes in {len(changed_files)} files:", "INFO")
+            for change in code_changes:
+                self._log(f"   {change.file_path} lines {change.line_start}-{change.line_end} ({change.change_type})", "INFO")
+        
         if not changed_files:
             self._log("No C files changed. Exiting CI run.", "INFO")
             return
 
+        # Step 2: Extract all functions from changed files
         all_changed_functions = []
         compilation_status = {}
         
@@ -1468,98 +1798,171 @@ Generate the complete C test file now:"""
             self._save_reports(report)
             return
 
+        # Step 3: Create intelligent test chunks
+        if code_changes:
+            test_chunks = self.dependency_analyzer.create_test_chunks(code_changes, all_changed_functions)
+            self._log(f"🧩 Created {len(test_chunks)} intelligent test chunks:", "INFO")
+            for chunk in test_chunks:
+                self._log(f"   {chunk.chunk_id}: {chunk.test_type} testing, {len(chunk.dependent_functions)} functions, complexity: {chunk.complexity_score}/10", "INFO")
+        else:
+            # Fallback: treat all functions as one integration chunk
+            fallback_changes = [CodeChange(file_path=f.file_path, line_start=f.line_start, line_end=f.line_end, change_type="modified") for f in all_changed_functions]
+            test_chunks = self.dependency_analyzer.create_test_chunks(fallback_changes, all_changed_functions)
+            self._log(f"🧩 Created fallback test chunks: {len(test_chunks)}", "INFO")
+
+        # Step 4: Process each test chunk
+        all_test_results = []
+        all_coverage_metrics = {}
+        overall_status = "SUCCESS"
+        
+        for chunk in test_chunks:
+            self._log(f"🧪 Processing {chunk.chunk_id} ({chunk.test_type} test)...", "INFO")
+            
+            # Generate targeted test suite for this chunk
+            chunk_test_content = self._generate_c_test_suite_for_chunk(chunk)
+            
+            if not chunk_test_content:
+                self._log(f"❌ Failed to generate test cases for {chunk.chunk_id}", "ERROR")
+                overall_status = "FAILED"
+                continue
+            
+            # Save and run tests for this chunk
+            chunk_results = self._run_chunk_tests(chunk, chunk_test_content, changed_files)
+            all_test_results.append(chunk_results)
+            
+            if chunk_results.get('status') != 'success':
+                overall_status = "FAILED"
+        
+        # Step 5: Consolidate results
+        consolidated_test_cases = []
+        consolidated_output = []
+        
+        for results in all_test_results:
+            if 'test_cases' in results:
+                consolidated_test_cases.extend(results['test_cases'])
+            if 'output' in results:
+                consolidated_output.append(results['output'])
+        
         # Function analysis summary
         total_functions = len(all_changed_functions)
         static_functions = sum(1 for f in all_changed_functions if f.signature.is_static)
-        avg_complexity = sum(f.complexity_score for f in all_changed_functions) / total_functions
+        avg_complexity = sum(f.complexity_score for f in all_changed_functions) / total_functions if total_functions > 0 else 0
         
         self._log(f"📊 C Function Analysis Summary:", "INFO")
         self._log(f"   Total Functions: {total_functions}", "INFO")
         self._log(f"   Static Functions: {static_functions}", "INFO")
         self._log(f"   Average Complexity: {avg_complexity:.1f}/10", "INFO")
-        
-        # Generate C test suite
-        self._log(f"🧠 Generating C test cases using {self.model_name}...", "INFO")
-        test_content = self._generate_c_test_suite(all_changed_functions)
-        
-        if not test_content:
-            self._log("❌ Failed to generate C test cases. Aborting.", "ERROR")
-            execution_time = (datetime.now() - self.start_time).total_seconds()
-            
-            report = TestReport(
-                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                model_name=self.model_name,
-                changed_files=changed_files,
-                analyzed_functions=all_changed_functions,
-                test_results={"status": "failure", "output": "Failed to generate C test cases"},
-                coverage_metrics={},
-                status="FAILED",
-                execution_time=execution_time,
-                logs=self.logs,
-                compilation_status=compilation_status
-            )
-            self._save_reports(report)
-            return
 
-        # Save C test file
-        test_file_name = "pr_generated_tests.c"
-        test_file_path = self.test_dir / test_file_name
-        
-        try:
-            with open(test_file_path, 'w', encoding='utf-8') as f:
-                f.write(test_content)
-            
-            compilation_status['generated_test_file'] = True
-            self._log(f"✅ Generated and saved C tests to {test_file_path}", "SUCCESS")
-                
-        except Exception as e:
-            compilation_status['generated_test_file'] = False
-            self._log(f"❌ Failed to save C test file: {e}", "ERROR")
-            execution_time = (datetime.now() - self.start_time).total_seconds()
-            
-            report = TestReport(
-                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                model_name=self.model_name,
-                changed_files=changed_files,
-                analyzed_functions=all_changed_functions,
-                test_results={"status": "failure", "output": f"Failed to save test file: {e}"},
-                coverage_metrics={},
-                status="FAILED",
-                execution_time=execution_time,
-                logs=self.logs,
-                compilation_status=compilation_status
-            )
-            self._save_reports(report)
-            return
+        # Generate final coverage report
+        self._log("📊 Generating consolidated coverage reports...", "INFO")
+        coverage_metrics = self._generate_coverage_reports(changed_files)
 
-        # Compile and run C tests
-        self._log("🏃 Compiling and executing C tests...", "INFO")
-        test_results = self._compile_and_run_tests(test_file_path, changed_files)
-        
-        # Calculate execution time and determine status
+        # Create final test report
         execution_time = (datetime.now() - self.start_time).total_seconds()
-        overall_status = "SUCCESS" if test_results["status"] == "success" else "FAILED"
         
-        # Create comprehensive report
         report = TestReport(
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             model_name=self.model_name,
             changed_files=changed_files,
             analyzed_functions=all_changed_functions,
-            test_results=test_results,
-            coverage_metrics=test_results.get("coverage", {}),  # Include actual coverage data
+            test_results={
+                "status": "success" if overall_status == "SUCCESS" else "failure",
+                "output": "\n\n".join(consolidated_output),
+                "chunks_processed": len(test_chunks),
+                "chunk_details": [{"id": c.chunk_id, "type": c.test_type, "functions": len(c.dependent_functions)} for c in test_chunks]
+            },
+            coverage_metrics=coverage_metrics,
             status=overall_status,
             execution_time=execution_time,
             logs=self.logs,
             compilation_status=compilation_status,
-            test_cases=test_results.get("test_cases", [])
+            test_cases=consolidated_test_cases
         )
-        
-        # Save reports
+
         self._save_reports(report)
+        self._log(f"🎉 Test automation completed with status: {overall_status}", "SUCCESS" if overall_status == "SUCCESS" else "ERROR")
+
+    def _generate_c_test_suite_for_chunk(self, chunk: TestChunk) -> str:
+        """Generate C test suite for a specific chunk with targeted testing"""
+        if not chunk.dependent_functions:
+            return ""
+
+        # Modify the existing prompt to focus on the specific chunk
+        chunk_prompt = self._build_c_test_prompt_for_chunk(chunk)
         
-        # Final summary
-        self._log(f"✨ C test automation completed in {execution_time:.2f} seconds", "INFO")
+        # Generate test code with retries
+        test_code = self._invoke_llm_for_c_generation(chunk_prompt)
+        
+        if not test_code:
+            return ""
+        
+        return test_code
+    
+    def _build_c_test_prompt_for_chunk(self, chunk: TestChunk) -> str:
+        """Build C test prompt focused on a specific chunk"""
+        functions = chunk.dependent_functions
+        
+        # Build comprehensive prompt similar to existing but chunk-focused
+        prompt = self._build_c_test_prompt(functions)
+        
+        # Add chunk-specific context
+        chunk_context = f"""
+
+## CHUNK-SPECIFIC CONTEXT:
+
+This is a {chunk.test_type.upper()} TEST for chunk {chunk.chunk_id}.
+
+### Primary Changes:
+"""
+        
+        for change in chunk.primary_changes:
+            chunk_context += f"- {change.file_path} lines {change.line_start}-{change.line_end} ({change.change_type})\n"
+        
+        chunk_context += f"""
+### Testing Scope:
+- Primary functions: {len([f for f in functions if any(change.file_path == f.file_path and f.line_start <= change.line_end and f.line_end >= change.line_start for change in chunk.primary_changes)])}
+- Connected functions: {len(chunk.dependent_functions)}
+- Test complexity: {chunk.complexity_score}/10
+
+### Test Strategy:
+"""
+        
+        if chunk.test_type == "unit":
+            chunk_context += "- Focus on isolated testing of individual functions\n- Test only direct functionality without external dependencies\n"
+        elif chunk.test_type == "integration":
+            chunk_context += "- Test interactions between connected functions\n- Include dependency testing and data flow validation\n"
+        else:  # system
+            chunk_context += "- Test end-to-end scenarios involving multiple components\n- Include comprehensive integration scenarios\n"
+        
+        return prompt + chunk_context
+    
+    def _run_chunk_tests(self, chunk: TestChunk, test_content: str, changed_files: List[str]) -> Dict[str, Any]:
+        """Run tests for a specific chunk"""
+        # Save chunk-specific test file
+        chunk_test_file = self.test_dir / f"{chunk.chunk_id}_tests.c"
+        
+        try:
+            with open(chunk_test_file, 'w', encoding='utf-8') as f:
+                f.write(test_content)
+            
+            self._log(f"✅ Generated chunk test file: {chunk_test_file}", "SUCCESS")
+            
+            # Compile and run tests for this chunk
+            chunk_results = self._compile_and_run_tests(chunk_test_file, changed_files)
+            chunk_results['chunk_id'] = chunk.chunk_id
+            chunk_results['test_type'] = chunk.test_type
+            
+            return chunk_results
+            
+        except Exception as e:
+            self._log(f"❌ Failed to run tests for {chunk.chunk_id}: {e}", "ERROR")
+            return {
+                "status": "failure",
+                "output": f"Failed to run chunk tests: {e}",
+                "test_cases": [],
+                "chunk_id": chunk.chunk_id,
+                "test_type": chunk.test_type
+            }
         self._log(f"📊 Final Status: {overall_status}", "INFO")
         self._log(f"🔧 Compilation Status: {sum(compilation_status.values())}/{len(compilation_status)} files successful", "INFO")
 
