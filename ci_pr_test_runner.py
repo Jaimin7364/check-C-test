@@ -292,30 +292,113 @@ class CDependencyAnalyzer:
             # Find functions affected by these changes
             affected_functions = self._find_affected_functions(file_changes, all_functions)
             
-            # Analyze dependencies for these functions
-            connected_functions = self._find_connected_functions(
-                affected_functions, all_functions, dependency_map
-            )
+            # NEW: Check if we can isolate individual functions
+            isolated_chunks = self._try_isolate_functions(affected_functions, all_functions, dependency_map)
             
-            # Determine test type based on scope
-            test_type = self._determine_test_type(affected_functions, connected_functions)
-            
-            # Calculate complexity
-            complexity = self._calculate_chunk_complexity(file_changes, connected_functions)
-            
-            chunk = TestChunk(
-                chunk_id=f"chunk_{chunk_id}",
-                primary_changes=file_changes,
-                dependent_functions=connected_functions,
-                dependent_files=self._find_dependent_files(file_path, dependency_map),
-                test_type=test_type,
-                complexity_score=complexity
-            )
-            
-            chunks.append(chunk)
-            chunk_id += 1
+            if isolated_chunks:
+                # Use isolated chunks for better granularity
+                for isolated_chunk in isolated_chunks:
+                    isolated_chunk.chunk_id = f"chunk_{chunk_id}"
+                    chunks.append(isolated_chunk)
+                    chunk_id += 1
+            else:
+                # Fall back to the original grouped approach
+                connected_functions = self._find_connected_functions(
+                    affected_functions, all_functions, dependency_map
+                )
+                
+                test_type = self._determine_test_type(affected_functions, connected_functions)
+                complexity = self._calculate_chunk_complexity(file_changes, connected_functions)
+                
+                chunk = TestChunk(
+                    chunk_id=f"chunk_{chunk_id}",
+                    primary_changes=file_changes,
+                    dependent_functions=connected_functions,
+                    dependent_files=self._find_dependent_files(file_path, dependency_map),
+                    test_type=test_type,
+                    complexity_score=complexity
+                )
+                
+                chunks.append(chunk)
+                chunk_id += 1
         
         return chunks
+    
+    def _try_isolate_functions(self, affected_functions: List[CFunctionInfo], 
+                              all_functions: List[CFunctionInfo],
+                              dependency_map: Dict[str, DependencyInfo]) -> List[TestChunk]:
+        """Try to isolate functions that can be tested independently"""
+        isolated_chunks = []
+        
+        for func in affected_functions:
+            # Check if this function can be tested in isolation
+            if self._can_function_be_isolated(func, all_functions, dependency_map):
+                # Create an isolated chunk for this function
+                chunk = TestChunk(
+                    chunk_id="",  # Will be set by caller
+                    primary_changes=[],  # Will be set based on actual changes
+                    dependent_functions=[func],
+                    dependent_files={func.file_path},
+                    test_type="unit",
+                    complexity_score=func.complexity_score
+                )
+                isolated_chunks.append(chunk)
+        
+        # If we can isolate all functions individually, return the isolated chunks
+        if len(isolated_chunks) == len(affected_functions):
+            return isolated_chunks
+        
+        # If some functions must be grouped, return None to use the grouped approach
+        return None
+    
+    def _can_function_be_isolated(self, func: CFunctionInfo, 
+                                 all_functions: List[CFunctionInfo],
+                                 dependency_map: Dict[str, DependencyInfo]) -> bool:
+        """Check if a function can be tested in isolation"""
+        
+        # Get dependencies for this function's file
+        file_deps = dependency_map.get(func.file_path, DependencyInfo())
+        
+        # Extract function calls from the specific function code
+        function_calls_in_code = set()
+        call_pattern = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)\s*\(')
+        for match in call_pattern.finditer(func.code):
+            call_name = match.group(1)
+            # Exclude C keywords, standard library functions, and I/O functions
+            if call_name not in {'if', 'while', 'for', 'switch', 'sizeof', 'return', 
+                                'printf', 'scanf', 'malloc', 'free', 'memcpy', 'strlen',
+                                'strcpy', 'strcmp', 'fopen', 'fclose', 'fprintf', 'fscanf'}:
+                function_calls_in_code.add(call_name)
+        
+        # Check if this function calls other user-defined functions in the project
+        user_defined_functions = {f.name for f in all_functions}
+        calls_user_functions = function_calls_in_code.intersection(user_defined_functions)
+        
+        # Remove the function's own name if it appears (recursive calls are ok for isolation)
+        calls_user_functions.discard(func.name)
+        
+        # Check if other functions call this function
+        called_by_others = False
+        for other_func in all_functions:
+            if other_func.name != func.name:
+                other_calls = set()
+                for match in call_pattern.finditer(other_func.code):
+                    other_calls.add(match.group(1))
+                if func.name in other_calls:
+                    called_by_others = True
+                    break
+        
+        # A function can be isolated if:
+        # 1. It doesn't call other user-defined functions OR
+        # 2. It only calls library functions OR
+        # 3. It's not called by other functions (indicating it might be newly added)
+        
+        is_isolated = (
+            len(calls_user_functions) == 0 or  # Calls no user functions
+            not called_by_others  # Not called by other functions (likely new/independent)
+        )
+        
+        return is_isolated
     
     def _find_affected_functions(self, changes: List[CodeChange], all_functions: List[CFunctionInfo]) -> List[CFunctionInfo]:
         """Find functions that are directly affected by the changes"""
