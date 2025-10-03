@@ -22,6 +22,13 @@ if not GROQ_API_KEY:
 MODEL_ID = "llama-3.3-70b-versatile"
 DEFAULT_TEST_DIR = "tests_pr"
 
+# Chunking Configuration
+MAX_LINES_PER_CHUNK = 800        # Maximum lines of code per chunk
+MAX_TOKENS_PER_CHUNK = 2500      # Estimated token limit per chunk
+MIN_FUNCTIONS_PER_CHUNK = 1      # Minimum functions per chunk
+MAX_FUNCTIONS_PER_CHUNK = 10     # Maximum functions per chunk
+LINES_TO_TOKENS_RATIO = 3        # Rough estimate: 1 line = 3 tokens
+
 @dataclass
 class FunctionSignature:
     """C function signature information"""
@@ -103,6 +110,8 @@ class TestChunk:
     dependent_files: Set[str]
     test_type: str  # "unit", "integration", "system"
     complexity_score: int = 0
+    total_lines: int = 0
+    estimated_tokens: int = 0
 
 @dataclass
 class TestReport:
@@ -276,7 +285,7 @@ class CDependencyAnalyzer:
         return deps
     
     def create_test_chunks(self, changes: List[CodeChange], all_functions: List[CFunctionInfo]) -> List[TestChunk]:
-        """Create intelligent test chunks based on changes and their dependencies"""
+        """Create intelligent test chunks based on changes and their dependencies with size optimization"""
         chunks = []
         dependency_map = self.build_dependency_map([change.file_path for change in changes])
         
@@ -296,31 +305,20 @@ class CDependencyAnalyzer:
             isolated_chunks = self._try_isolate_functions(affected_functions, all_functions, dependency_map)
             
             if isolated_chunks:
-                # Use isolated chunks for better granularity
-                for isolated_chunk in isolated_chunks:
-                    isolated_chunk.chunk_id = f"chunk_{chunk_id}"
-                    chunks.append(isolated_chunk)
+                # Apply size-based chunking to isolated functions
+                size_optimized_chunks = self._apply_size_based_chunking(isolated_chunks)
+                for chunk in size_optimized_chunks:
+                    chunk.chunk_id = f"chunk_{chunk_id}"
+                    chunks.append(chunk)
                     chunk_id += 1
             else:
-                # Fall back to the original grouped approach
-                connected_functions = self._find_connected_functions(
-                    affected_functions, all_functions, dependency_map
+                # Create integration chunk but apply size-based chunking
+                integration_functions = self._find_connected_functions(affected_functions, all_functions, dependency_map)
+                integration_chunks = self._create_size_optimized_chunks(
+                    file_changes, integration_functions, chunk_id, "integration"
                 )
-                
-                test_type = self._determine_test_type(affected_functions, connected_functions)
-                complexity = self._calculate_chunk_complexity(file_changes, connected_functions)
-                
-                chunk = TestChunk(
-                    chunk_id=f"chunk_{chunk_id}",
-                    primary_changes=file_changes,
-                    dependent_functions=connected_functions,
-                    dependent_files=self._find_dependent_files(file_path, dependency_map),
-                    test_type=test_type,
-                    complexity_score=complexity
-                )
-                
-                chunks.append(chunk)
-                chunk_id += 1
+                chunks.extend(integration_chunks)
+                chunk_id += len(integration_chunks)
         
         return chunks
     
@@ -333,6 +331,10 @@ class CDependencyAnalyzer:
         for func in affected_functions:
             # Check if this function can be tested in isolation
             if self._can_function_be_isolated(func, all_functions, dependency_map):
+                # Calculate size metrics for this function
+                func_lines = len(func.code.splitlines())
+                func_tokens = func_lines * LINES_TO_TOKENS_RATIO
+                
                 # Create an isolated chunk for this function
                 chunk = TestChunk(
                     chunk_id="",  # Will be set by caller
@@ -340,7 +342,9 @@ class CDependencyAnalyzer:
                     dependent_functions=[func],
                     dependent_files={func.file_path},
                     test_type="unit",
-                    complexity_score=func.complexity_score
+                    complexity_score=func.complexity_score,
+                    total_lines=func_lines,
+                    estimated_tokens=func_tokens
                 )
                 isolated_chunks.append(chunk)
         
@@ -478,6 +482,229 @@ class CDependencyAnalyzer:
                 dependent_files.add(other_file)
         
         return dependent_files
+    
+    def _apply_size_based_chunking(self, isolated_chunks: List[TestChunk]) -> List[TestChunk]:
+        """Apply size-based chunking to isolated chunks to optimize token usage"""
+        optimized_chunks = []
+        
+        # Separate large functions that should stay alone vs small functions that can be grouped
+        large_chunks = []
+        small_chunks = []
+        
+        for chunk in isolated_chunks:
+            # Calculate total lines and estimated tokens for this chunk
+            total_lines = sum(len(func.code.splitlines()) for func in chunk.dependent_functions)
+            estimated_tokens = total_lines * LINES_TO_TOKENS_RATIO
+            
+            chunk.total_lines = total_lines
+            chunk.estimated_tokens = estimated_tokens
+            
+            # If individual function is large, keep it separate
+            if total_lines > MAX_LINES_PER_CHUNK // 2:  # Functions larger than half the limit stay separate
+                large_chunks.append(chunk)
+            else:
+                small_chunks.append(chunk)
+        
+        # Add large chunks as-is
+        optimized_chunks.extend(large_chunks)
+        
+        # Group small chunks together to optimize token usage
+        if small_chunks:
+            grouped_chunks = self._group_small_chunks(small_chunks)
+            optimized_chunks.extend(grouped_chunks)
+        
+        return optimized_chunks
+    
+    def _group_small_chunks(self, small_chunks: List[TestChunk]) -> List[TestChunk]:
+        """Group small isolated chunks together to optimize token usage"""
+        grouped_chunks = []
+        current_group_functions = []
+        current_group_lines = 0
+        current_group_tokens = 0
+        current_group_changes = []
+        current_group_files = set()
+        group_id = 0
+        
+        for chunk in small_chunks:
+            chunk_lines = chunk.total_lines
+            chunk_tokens = chunk.estimated_tokens
+            
+            # Check if adding this chunk would exceed limits
+            if (current_group_lines + chunk_lines > MAX_LINES_PER_CHUNK or
+                current_group_tokens + chunk_tokens > MAX_TOKENS_PER_CHUNK or
+                len(current_group_functions) >= MAX_FUNCTIONS_PER_CHUNK):
+                
+                # Create group from current functions
+                if current_group_functions:
+                    grouped_chunk = TestChunk(
+                        chunk_id=f"grouped_{group_id}",
+                        primary_changes=current_group_changes,
+                        dependent_functions=current_group_functions,
+                        dependent_files=current_group_files,
+                        test_type="unit",
+                        complexity_score=sum(f.complexity_score for f in current_group_functions),
+                        total_lines=current_group_lines,
+                        estimated_tokens=current_group_tokens
+                    )
+                    grouped_chunks.append(grouped_chunk)
+                    group_id += 1
+                
+                # Start new group
+                current_group_functions = chunk.dependent_functions.copy()
+                current_group_lines = chunk_lines
+                current_group_tokens = chunk_tokens
+                current_group_changes = chunk.primary_changes.copy()
+                current_group_files = chunk.dependent_files.copy()
+            else:
+                # Add to current group
+                current_group_functions.extend(chunk.dependent_functions)
+                current_group_lines += chunk_lines
+                current_group_tokens += chunk_tokens
+                current_group_changes.extend(chunk.primary_changes)
+                current_group_files.update(chunk.dependent_files)
+        
+        # Add the last group
+        if current_group_functions:
+            grouped_chunk = TestChunk(
+                chunk_id=f"grouped_{group_id}",
+                primary_changes=current_group_changes,
+                dependent_functions=current_group_functions,
+                dependent_files=current_group_files,
+                test_type="unit",
+                complexity_score=sum(f.complexity_score for f in current_group_functions),
+                total_lines=current_group_lines,
+                estimated_tokens=current_group_tokens
+            )
+            grouped_chunks.append(grouped_chunk)
+        
+        return grouped_chunks
+    
+    def _create_size_optimized_chunks(self, changes: List[CodeChange], 
+                                    functions: List[CFunctionInfo], 
+                                    start_chunk_id: int, 
+                                    test_type: str) -> List[TestChunk]:
+        """Create size-optimized chunks from a list of functions"""
+        chunks = []
+        
+        if not functions:
+            return chunks
+        
+        # Calculate total size
+        total_lines = sum(len(func.code.splitlines()) for func in functions)
+        total_tokens = total_lines * LINES_TO_TOKENS_RATIO
+        
+        # If total size is within limits, create single chunk
+        if (total_lines <= MAX_LINES_PER_CHUNK and 
+            total_tokens <= MAX_TOKENS_PER_CHUNK and 
+            len(functions) <= MAX_FUNCTIONS_PER_CHUNK):
+            
+            chunk = TestChunk(
+                chunk_id=f"chunk_{start_chunk_id}",
+                primary_changes=changes,
+                dependent_functions=functions,
+                dependent_files=set(f.file_path for f in functions),
+                test_type=test_type,
+                complexity_score=self._calculate_chunk_complexity(changes, functions),
+                total_lines=total_lines,
+                estimated_tokens=total_tokens
+            )
+            chunks.append(chunk)
+        else:
+            # Split into multiple chunks
+            chunk_groups = self._group_functions_for_chunking(functions)
+            
+            for i, group in enumerate(chunk_groups):
+                group_lines = sum(len(func.code.splitlines()) for func in group)
+                group_tokens = group_lines * LINES_TO_TOKENS_RATIO
+                
+                chunk = TestChunk(
+                    chunk_id=f"chunk_{start_chunk_id + i}",
+                    primary_changes=changes,
+                    dependent_functions=group,
+                    dependent_files=set(f.file_path for f in group),
+                    test_type=test_type,
+                    complexity_score=self._calculate_chunk_complexity(changes, group),
+                    total_lines=group_lines,
+                    estimated_tokens=group_tokens
+                )
+                chunks.append(chunk)
+        
+        return chunks
+    
+    def _split_large_chunk(self, chunk: TestChunk) -> List[TestChunk]:
+        """Split a large chunk into smaller, manageable chunks"""
+        sub_chunks = []
+        functions = chunk.dependent_functions
+        
+        # Group functions to fit within size limits
+        function_groups = self._group_functions_for_chunking(functions)
+        
+        for i, group in enumerate(function_groups):
+            group_lines = sum(len(func.code.splitlines()) for func in group)
+            group_tokens = group_lines * LINES_TO_TOKENS_RATIO
+            
+            sub_chunk = TestChunk(
+                chunk_id=f"{chunk.chunk_id}_part_{i}",
+                primary_changes=chunk.primary_changes,
+                dependent_functions=group,
+                dependent_files=set(f.file_path for f in group),
+                test_type=chunk.test_type,
+                complexity_score=self._calculate_chunk_complexity(chunk.primary_changes, group),
+                total_lines=group_lines,
+                estimated_tokens=group_tokens
+            )
+            sub_chunks.append(sub_chunk)
+        
+        return sub_chunks
+    
+    def _group_functions_for_chunking(self, functions: List[CFunctionInfo]) -> List[List[CFunctionInfo]]:
+        """Group functions into chunks that fit within size and token limits"""
+        groups = []
+        current_group = []
+        current_lines = 0
+        current_tokens = 0
+        
+        # Sort functions by size (largest first) to better pack them
+        sorted_functions = sorted(functions, key=lambda f: len(f.code.splitlines()), reverse=True)
+        
+        for func in sorted_functions:
+            func_lines = len(func.code.splitlines())
+            func_tokens = func_lines * LINES_TO_TOKENS_RATIO
+            
+            # If this single function is too large, put it in its own chunk
+            if func_lines > MAX_LINES_PER_CHUNK:
+                if current_group:
+                    groups.append(current_group)
+                    current_group = []
+                    current_lines = 0
+                    current_tokens = 0
+                
+                # Large function gets its own chunk (don't split individual functions)
+                groups.append([func])
+                continue
+            
+            # Check if adding this function would exceed limits
+            if (current_lines + func_lines > MAX_LINES_PER_CHUNK or
+                current_tokens + func_tokens > MAX_TOKENS_PER_CHUNK or
+                len(current_group) >= MAX_FUNCTIONS_PER_CHUNK):
+                
+                # Start new group
+                if current_group:
+                    groups.append(current_group)
+                current_group = [func]
+                current_lines = func_lines
+                current_tokens = func_tokens
+            else:
+                # Add to current group
+                current_group.append(func)
+                current_lines += func_lines
+                current_tokens += func_tokens
+        
+        # Add the last group
+        if current_group:
+            groups.append(current_group)
+        
+        return groups
 
 class CCodeAnalyzer:
     """C code analyzer for function extraction"""
@@ -1702,7 +1929,8 @@ Generate the complete C test file now:"""
             
             if "chunk_details" in report.test_results:
                 for chunk_detail in report.test_results["chunk_details"]:
-                    lines.append(f"  📦 {chunk_detail['id']}: {chunk_detail['type'].upper()} testing ({chunk_detail['functions']} functions)")
+                    lines.append(f"  📦 {chunk_detail['id']}: {chunk_detail['type'].upper()} testing")
+                    lines.append(f"     Functions: {chunk_detail['functions']}, Lines: {chunk_detail['lines']}, Est. Tokens: {chunk_detail['estimated_tokens']}")
                 lines.append("")
         
         lines.extend([
@@ -1886,7 +2114,8 @@ Generate the complete C test file now:"""
             test_chunks = self.dependency_analyzer.create_test_chunks(code_changes, all_changed_functions)
             self._log(f"🧩 Created {len(test_chunks)} intelligent test chunks:", "INFO")
             for chunk in test_chunks:
-                self._log(f"   {chunk.chunk_id}: {chunk.test_type} testing, {len(chunk.dependent_functions)} functions, complexity: {chunk.complexity_score}/10", "INFO")
+                self._log(f"   {chunk.chunk_id}: {chunk.test_type} testing, {len(chunk.dependent_functions)} functions", "INFO")
+                self._log(f"      Lines: {chunk.total_lines}, Est. Tokens: {chunk.estimated_tokens}, Complexity: {chunk.complexity_score}/10", "INFO")
         else:
             # Fallback: treat all functions as one integration chunk
             fallback_changes = [CodeChange(file_path=f.file_path, line_start=f.line_start, line_end=f.line_end, change_type="modified") for f in all_changed_functions]
@@ -1952,7 +2181,15 @@ Generate the complete C test file now:"""
                 "status": "success" if overall_status == "SUCCESS" else "failure",
                 "output": "\n\n".join(consolidated_output),
                 "chunks_processed": len(test_chunks),
-                "chunk_details": [{"id": c.chunk_id, "type": c.test_type, "functions": len(c.dependent_functions)} for c in test_chunks]
+                "chunk_details": [
+                    {
+                        "id": c.chunk_id, 
+                        "type": c.test_type, 
+                        "functions": len(c.dependent_functions),
+                        "lines": c.total_lines,
+                        "estimated_tokens": c.estimated_tokens
+                    } for c in test_chunks
+                ]
             },
             coverage_metrics=coverage_metrics,
             status=overall_status,
