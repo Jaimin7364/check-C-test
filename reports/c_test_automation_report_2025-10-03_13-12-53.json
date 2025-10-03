@@ -1,0 +1,189 @@
+{
+  "title": "🚀 C Project Test Automation Report",
+  "generated": "2025-10-03 13:12:53",
+  "model_name": "llama-3.3-70b-versatile",
+  "execution_time_seconds": 3.199615,
+  "status": "SUCCESS",
+  "changed_files": [
+    "main.c"
+  ],
+  "compilation_status": {
+    "main.c": true
+  },
+  "analyzed_functions": [
+    {
+      "name": "add",
+      "file_path": "main.c",
+      "line_start": 1,
+      "line_end": 5,
+      "return_type": "int",
+      "parameters": [
+        {
+          "type": "int",
+          "name": "a"
+        },
+        {
+          "type": "int",
+          "name": "b"
+        },
+        {
+          "type": "int",
+          "name": "c"
+        }
+      ],
+      "is_static": false,
+      "is_extern": false,
+      "complexity_score": 1,
+      "code_snippet": "#include <stdio.h>\n\nint add(int a, int b, int c) {\n    return a + b + c;\n}"
+    },
+    {
+      "name": "main",
+      "file_path": "main.c",
+      "line_start": 5,
+      "line_end": 17,
+      "return_type": "int",
+      "parameters": [],
+      "is_static": false,
+      "is_extern": false,
+      "complexity_score": 1,
+      "code_snippet": "}\n\nint main() {\n    int num1, num2, num3, result;\n    \n    printf(\"Enter three numbers: \");\n    scanf(\"%d %d %d\", &num1, &num2, &num3);\n    \n    result = add(num1, num2, num3);\n    \n    printf(\"Sum: %..."
+    }
+  ],
+  "test_results": {
+    "status": "success",
+    "output": "[==========] tests: Running 7 test(s).\n[ RUN      ] test_add_normal\n[       OK ] test_add_normal\n[ RUN      ] test_add_zero\n[       OK ] test_add_zero\n[ RUN      ] test_add_negative\n[       OK ] test_add_negative\n[ RUN      ] test_add_mixed\n[       OK ] test_add_mixed\n[ RUN      ] test_add_max_int\n[       OK ] test_add_max_int\n[ RUN      ] test_add_min_int\n[       OK ] test_add_min_int\n[ RUN      ] test_main_original\nEnter three numbers: Sum: -2144058558\n[       OK ] test_main_original\n[==========] tests: 7 test(s) run.\n",
+    "chunks_processed": 1,
+    "chunk_details": [
+      {
+        "id": "chunk_0",
+        "type": "unit",
+        "functions": 2,
+        "lines": 18,
+        "estimated_tokens": 54
+      }
+    ]
+  },
+  "test_cases": [
+    {
+      "name": "test_add_normal",
+      "status": "PASS",
+      "execution_time": 0.0,
+      "error_message": "",
+      "failure_reason": "",
+      "test_method": "test_add_normal",
+      "explanation": "Tests add functionality with specific input conditions"
+    },
+    {
+      "name": "test_add_zero",
+      "status": "PASS",
+      "execution_time": 0.0,
+      "error_message": "",
+      "failure_reason": "",
+      "test_method": "test_add_zero",
+      "explanation": "Tests behavior with zero values"
+    },
+    {
+      "name": "test_add_negative",
+      "status": "PASS",
+      "execution_time": 0.0,
+      "error_message": "",
+      "failure_reason": "",
+      "test_method": "test_add_negative",
+      "explanation": "Tests add with negative values"
+    },
+    {
+      "name": "test_add_mixed",
+      "status": "PASS",
+      "execution_time": 0.0,
+      "error_message": "",
+      "failure_reason": "",
+      "test_method": "test_add_mixed",
+      "explanation": "Tests add functionality with specific input conditions"
+    },
+    {
+      "name": "test_add_max_int",
+      "status": "PASS",
+      "execution_time": 0.0,
+      "error_message": "",
+      "failure_reason": "",
+      "test_method": "test_add_max_int",
+      "explanation": "Tests with maximum integer value (boundary condition)"
+    },
+    {
+      "name": "test_add_min_int",
+      "status": "PASS",
+      "execution_time": 0.0,
+      "error_message": "",
+      "failure_reason": "",
+      "test_method": "test_add_min_int",
+      "explanation": "Tests with minimum integer value (boundary condition)"
+    },
+    {
+      "name": "test_main_original",
+      "status": "PASS",
+      "execution_time": 0.0,
+      "error_message": "",
+      "failure_reason": "",
+      "test_method": "test_main_original",
+      "explanation": "Tests main functionality with specific input conditions"
+    }
+  ],
+  "coverage_metrics": {
+    "line_coverage": 100.0,
+    "function_coverage": 100.0,
+    "branch_coverage": 0.0,
+    "files": {
+      "main.c": {
+        "file": "main.c",
+        "total_lines": 0,
+        "covered_lines": 0,
+        "line_coverage": 0.0
+      }
+    },
+    "summary": "No coverage data available",
+    "html_report": "/home/runner/work/check-C-test/check-C-test/coverage/html/index.html",
+    "total_lines": 63,
+    "covered_lines": 63,
+    "total_functions": 10,
+    "covered_functions": 10
+  },
+  "execution_logs": [
+    "[2025-10-03 13:12:50] [INFO] 🚀 Starting C Project Test Automation with Smart Chunking",
+    "[2025-10-03 13:12:50] [INFO] 📋 Detected 5 code changes in 1 files:",
+    "[2025-10-03 13:12:50] [INFO]    main.c lines 3-4 (modified)",
+    "[2025-10-03 13:12:50] [INFO]    main.c lines 8-8 (modified)",
+    "[2025-10-03 13:12:50] [INFO]    main.c lines 11-11 (modified)",
+    "[2025-10-03 13:12:50] [INFO]    main.c lines 13-13 (modified)",
+    "[2025-10-03 13:12:50] [INFO]    main.c lines 17-17 (modified)",
+    "[2025-10-03 13:12:50] [INFO] 🔍 Analyzing C file: main.c",
+    "[2025-10-03 13:12:50] [INFO] ✅ Found 2 functions in main.c",
+    "[2025-10-03 13:12:50] [INFO] 🧩 Created 1 intelligent test chunks:",
+    "[2025-10-03 13:12:50] [INFO]    chunk_0: unit testing, 2 functions",
+    "[2025-10-03 13:12:50] [INFO]       Lines: 18, Est. Tokens: 54, Complexity: 2/10",
+    "[2025-10-03 13:12:50] [INFO] 🧪 Processing chunk_0 (unit test)...",
+    "[2025-10-03 13:12:50] [INFO] 🤖 Generating C test code (attempt 1/3)...",
+    "[2025-10-03 13:12:52] [SUCCESS] ✅ Generated valid-looking C test code",
+    "[2025-10-03 13:12:52] [SUCCESS] ✅ Generated chunk test file: /home/runner/work/check-C-test/check-C-test/tests_pr/chunk_0_tests.c",
+    "[2025-10-03 13:12:52] [INFO] 🔨 Compiling C tests from /home/runner/work/check-C-test/check-C-test/tests_pr/chunk_0_tests.c",
+    "[2025-10-03 13:12:52] [INFO] 🔧 Compilation command: gcc -std=c99 -Wall -Wextra -g --coverage -fprofile-arcs -ftest-coverage /home/runner/work/check-C-test/check-C-test/tests_pr/chunk_0_tests.c -lcmocka -lgcov -o /home/runner/work/check-C-test/check-C-test/tests_pr/chunk_0_tests -I /home/runner/work/check-C-test/check-C-test",
+    "[2025-10-03 13:12:52] [SUCCESS] ✅ Compilation successful",
+    "[2025-10-03 13:12:52] [INFO] 🧪 Executing C tests: /home/runner/work/check-C-test/check-C-test/tests_pr/chunk_0_tests",
+    "[2025-10-03 13:12:52] [INFO] 📊 Generating code coverage reports...",
+    "[2025-10-03 13:12:52] [INFO] 📊 Found version-specific gcov: gcov-11",
+    "[2025-10-03 13:12:52] [INFO] 📊 Using gcov tool: gcov-11",
+    "[2025-10-03 13:12:52] [INFO] 📊 Generating coverage for main.c...",
+    "[2025-10-03 13:12:52] [SUCCESS] ✅ Coverage generated for main.c",
+    "[2025-10-03 13:12:53] [SUCCESS] ✅ HTML coverage report generated",
+    "[2025-10-03 13:12:53] [SUCCESS] ✅ All tests passed",
+    "[2025-10-03 13:12:53] [INFO] 📊 C Function Analysis Summary:",
+    "[2025-10-03 13:12:53] [INFO]    Total Functions: 2",
+    "[2025-10-03 13:12:53] [INFO]    Static Functions: 0",
+    "[2025-10-03 13:12:53] [INFO]    Average Complexity: 1.0/10",
+    "[2025-10-03 13:12:53] [INFO] 📊 Generating consolidated coverage reports...",
+    "[2025-10-03 13:12:53] [INFO] 📊 Found version-specific gcov: gcov-11",
+    "[2025-10-03 13:12:53] [INFO] 📊 Using gcov tool: gcov-11",
+    "[2025-10-03 13:12:53] [INFO] 📊 Generating coverage for main.c...",
+    "[2025-10-03 13:12:53] [SUCCESS] ✅ Coverage generated for main.c",
+    "[2025-10-03 13:12:53] [SUCCESS] ✅ HTML coverage report generated"
+  ]
+}

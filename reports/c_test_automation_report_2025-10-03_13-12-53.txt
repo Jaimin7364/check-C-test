@@ -1,0 +1,124 @@
+🚀 C Project Test Automation Report
+Generated: 2025-10-03 13:12:53
+Model Used: llama-3.3-70b-versatile
+Execution Time: 3.20 seconds
+Status: SUCCESS
+
+============================================================
+
+📁 CHANGED FILES:
+
+  1. main.c
+
+🔨 COMPILATION STATUS:
+
+  main.c: ✅ SUCCESS
+
+🔍 ANALYZED C FUNCTIONS (2 total):
+
+  1. int add (3 params) [Complexity: 1/10]
+     File: main.c (lines 1-5)
+
+  2. int main (void) [Complexity: 1/10]
+     File: main.c (lines 5-17)
+
+🧩 INTELLIGENT TEST CHUNKING:
+  Total Chunks: 1
+
+  📦 chunk_0: UNIT testing
+     Functions: 2, Lines: 18, Est. Tokens: 54
+
+🧪 TEST RESULTS:
+  Status: SUCCESS
+
+📋 INDIVIDUAL TEST CASES:
+
+  1. test_add_normal
+     Status: ✅ PASS
+     Purpose: Tests add functionality with specific input conditions
+
+  2. test_add_zero
+     Status: ✅ PASS
+     Purpose: Tests behavior with zero values
+
+  3. test_add_negative
+     Status: ✅ PASS
+     Purpose: Tests add with negative values
+
+  4. test_add_mixed
+     Status: ✅ PASS
+     Purpose: Tests add functionality with specific input conditions
+
+  5. test_add_max_int
+     Status: ✅ PASS
+     Purpose: Tests with maximum integer value (boundary condition)
+
+  6. test_add_min_int
+     Status: ✅ PASS
+     Purpose: Tests with minimum integer value (boundary condition)
+
+  7. test_main_original
+     Status: ✅ PASS
+     Purpose: Tests main functionality with specific input conditions
+
+  Test Output:
+  ────────────────────────────────────────
+  [==========] tests: Running 7 test(s).
+  [ RUN      ] test_add_normal
+  [       OK ] test_add_normal
+  [ RUN      ] test_add_zero
+  [       OK ] test_add_zero
+  [ RUN      ] test_add_negative
+  [       OK ] test_add_negative
+  [ RUN      ] test_add_mixed
+  [       OK ] test_add_mixed
+  [ RUN      ] test_add_max_int
+  [       OK ] test_add_max_int
+  [ RUN      ] test_add_min_int
+  [       OK ] test_add_min_int
+  [ RUN      ] test_main_original
+  Enter three numbers: Sum: -2144058558
+  ────────────────────────────────────────
+
+📊 CODE COVERAGE:
+
+  No coverage data available
+
+  Line Coverage: 100.0%
+  Function Coverage: 100.0%
+  Branch Coverage: 0.0%
+
+  📁 File Coverage Details:
+    main.c: 0.0% (0/0 lines)
+  📋 HTML Report: /home/runner/work/check-C-test/check-C-test/coverage/html/index.html
+
+📝 EXECUTION LOGS (Last 25 entries):
+
+  [2025-10-03 13:12:52] [SUCCESS] ✅ Generated valid-looking C test code
+  [2025-10-03 13:12:52] [SUCCESS] ✅ Generated chunk test file: /home/runner/work/check-C-test/check-C-test/tests_pr/chunk_0_tests.c
+  [2025-10-03 13:12:52] [INFO] 🔨 Compiling C tests from /home/runner/work/check-C-test/check-C-test/tests_pr/chunk_0_tests.c
+  [2025-10-03 13:12:52] [INFO] 🔧 Compilation command: gcc -std=c99 -Wall -Wextra -g --coverage -fprofile-arcs -ftest-coverage /home/runner/work/check-C-test/check-C-test/tests_pr/chunk_0_tests.c -lcmocka -lgcov -o /home/runner/work/check-C-test/check-C-test/tests_pr/chunk_0_tests -I /home/runner/work/check-C-test/check-C-test
+  [2025-10-03 13:12:52] [SUCCESS] ✅ Compilation successful
+  [2025-10-03 13:12:52] [INFO] 🧪 Executing C tests: /home/runner/work/check-C-test/check-C-test/tests_pr/chunk_0_tests
+  [2025-10-03 13:12:52] [INFO] 📊 Generating code coverage reports...
+  [2025-10-03 13:12:52] [INFO] 📊 Found version-specific gcov: gcov-11
+  [2025-10-03 13:12:52] [INFO] 📊 Using gcov tool: gcov-11
+  [2025-10-03 13:12:52] [INFO] 📊 Generating coverage for main.c...
+  [2025-10-03 13:12:52] [SUCCESS] ✅ Coverage generated for main.c
+  [2025-10-03 13:12:53] [SUCCESS] ✅ HTML coverage report generated
+  [2025-10-03 13:12:53] [SUCCESS] ✅ All tests passed
+  [2025-10-03 13:12:53] [INFO] 📊 C Function Analysis Summary:
+  [2025-10-03 13:12:53] [INFO]    Total Functions: 2
+  [2025-10-03 13:12:53] [INFO]    Static Functions: 0
+  [2025-10-03 13:12:53] [INFO]    Average Complexity: 1.0/10
+  [2025-10-03 13:12:53] [INFO] 📊 Generating consolidated coverage reports...
+  [2025-10-03 13:12:53] [INFO] 📊 Found version-specific gcov: gcov-11
+  [2025-10-03 13:12:53] [INFO] 📊 Using gcov tool: gcov-11
+  [2025-10-03 13:12:53] [INFO] 📊 Generating coverage for main.c...
+  [2025-10-03 13:12:53] [SUCCESS] ✅ Coverage generated for main.c
+  [2025-10-03 13:12:53] [SUCCESS] ✅ HTML coverage report generated
+  [2025-10-03 13:12:53] [INFO] 📄 JSON report saved: /home/runner/work/check-C-test/check-C-test/reports/c_test_automation_report_2025-10-03_13-12-53.json
+  [2025-10-03 13:12:53] [INFO] 📄 XML report saved: /home/runner/work/check-C-test/check-C-test/reports/c_test_automation_report_2025-10-03_13-12-53.xml
+
+============================================================
+Report completed at: 2025-10-03 13:12:53

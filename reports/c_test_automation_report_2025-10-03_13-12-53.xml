@@ -1,0 +1,18 @@
+<c_test_automation_report><header><title>🚀 C Project Test Automation Report</title><generated>2025-10-03 13:12:53</generated><model_name>llama-3.3-70b-versatile</model_name><execution_time_seconds>3.199615</execution_time_seconds><status>SUCCESS</status></header><compilation_status><file name="main.c">True</file></compilation_status><analyzed_functions><count>2</count><function><name>add</name><file_path>main.c</file_path><return_type>int</return_type><complexity_score>1</complexity_score><is_static>False</is_static></function><function><name>main</name><file_path>main.c</file_path><return_type>int</return_type><complexity_score>1</complexity_score><is_static>False</is_static></function></analyzed_functions><test_results><status>success</status><output>[==========] tests: Running 7 test(s).
+[ RUN      ] test_add_normal
+[       OK ] test_add_normal
+[ RUN      ] test_add_zero
+[       OK ] test_add_zero
+[ RUN      ] test_add_negative
+[       OK ] test_add_negative
+[ RUN      ] test_add_mixed
+[       OK ] test_add_mixed
+[ RUN      ] test_add_max_int
+[       OK ] test_add_max_int
+[ RUN      ] test_add_min_int
+[       OK ] test_add_min_int
+[ RUN      ] test_main_original
+Enter three numbers: Sum: -2144058558
+[       OK ] test_main_original
+[==========] tests: 7 test(s) run.
+</output></test_results><test_cases><test_case name="test_add_normal" status="PASS"><explanation>Tests add functionality with specific input conditions</explanation></test_case><test_case name="test_add_zero" status="PASS"><explanation>Tests behavior with zero values</explanation></test_case><test_case name="test_add_negative" status="PASS"><explanation>Tests add with negative values</explanation></test_case><test_case name="test_add_mixed" status="PASS"><explanation>Tests add functionality with specific input conditions</explanation></test_case><test_case name="test_add_max_int" status="PASS"><explanation>Tests with maximum integer value (boundary condition)</explanation></test_case><test_case name="test_add_min_int" status="PASS"><explanation>Tests with minimum integer value (boundary condition)</explanation></test_case><test_case name="test_main_original" status="PASS"><explanation>Tests main functionality with specific input conditions</explanation></test_case></test_cases></c_test_automation_report>
