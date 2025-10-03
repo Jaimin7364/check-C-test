@@ -1091,7 +1091,14 @@ class CChangeAnalyzerAndTester:
 {chr(10).join(include_statements)}
 ```
 
-### 3. TEST STRUCTURE (Use CMocka framework):
+### 3. FUNCTION IMPLEMENTATIONS TO INCLUDE:
+Copy these exact function implementations into your test file:
+
+```c
+{chr(10).join([func.code for func in functions])}
+```
+
+### 4. TEST STRUCTURE (Use CMocka framework):
 ```c
 // Test function example - always add (void)state; to suppress unused parameter warning
 static void test_function_name(void **state) {{
@@ -1118,7 +1125,7 @@ int main(void) {{
 }}
 ```
 
-### 4. FUNCTIONS TO TEST:
+### 5. FUNCTIONS TO TEST:
 
 {chr(10).join(function_analyses)}
 
@@ -1158,12 +1165,16 @@ int main(void) {{
 ## OUTPUT FORMAT:
 Generate ONLY a complete C test file with:
 1. All necessary #include statements at the top
-2. Any required #define macros
-3. Static test functions for each function under test
-4. Main function with CMocka test suite setup that includes ALL test functions
-5. Proper C formatting and syntax
+2. The exact function implementations provided above (copy them exactly)
+3. Any required #define macros
+4. Static test functions for each function under test
+5. Main function with CMocka test suite setup that includes ALL test functions
+6. Proper C formatting and syntax
 
-IMPORTANT: Every test function you define MUST be included in the CMUnitTest array in main(), otherwise it will cause "defined but not used" warnings.
+IMPORTANT: 
+- Copy the function implementations EXACTLY as provided above
+- Every test function you define MUST be included in the CMUnitTest array in main(), otherwise it will cause "defined but not used" warnings
+- The test file should be completely self-contained and compilable
 
 ## COMPILATION REQUIREMENTS:
 - Code must compile with: gcc -std=c99 -Wall -Wextra
